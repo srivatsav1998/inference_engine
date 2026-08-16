@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Build artifacts
+engine/bin/
+*.o
+*.d
+
+# Large model weights
+model_convertor/*.bin
+model_convertor/model_weights.bin
+
+# Node
+node_modules/
