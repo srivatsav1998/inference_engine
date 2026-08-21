@@ -60,6 +60,37 @@ void test_matMul2D()
     std::cout << "PASSED" << std::endl;
 }
 
+void test_matMul2D_large()
+{
+    std::cout << "Running test_matMul2D_large (Multi-threaded)... ";
+    ArenaAllocator arena(1024 * 1024 * 10); // 10 MB arena for large matrices
+
+    size_t M = 128; // Rows of A (and output)
+    size_t K = 768; // Cols of A / Rows of B
+    size_t N = 64;  // Cols of B (and output)
+
+    // Fill A with 1.0 and B with 2.0
+    std::vector<float> a_data(M * K, 1.0f);
+    std::vector<float> b_data(K * N, 2.0f);
+
+    TensorView A(a_data.data(), {M, K}, 0);
+    TensorView B(b_data.data(), {K, N}, 0);
+
+    auto C = matMul2D(A, B, arena);
+
+    // If A is all 1s and B is all 2s, the dot product of any row/col is simply:
+    // (K elements) * 1.0 * 2.0 = K * 2.0 = 1536.0
+    for (size_t i = 0; i < M; ++i)
+    {
+        for (size_t j = 0; j < N; ++j)
+        {
+            ASSERT_APPROX_EQUAL(1536.0f, C(i, j), 1e-5f);
+        }
+    }
+
+    std::cout << "PASSED" << std::endl;
+}
+
 void test_gelu()
 {
     std::cout << "Running test_gelu... ";
@@ -132,6 +163,7 @@ int main()
 
     test_add2D();
     test_matMul2D();
+    test_matMul2D_large();
     test_gelu();
     test_softmax();
     test_layerNorm();

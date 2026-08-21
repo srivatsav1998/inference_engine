@@ -5,6 +5,8 @@
 #include "arenaAllocator.hpp"
 
 #include <numbers>
+#include <thread>
+#include <arm_neon.h>
 
 //////////////// Accepts output Variants ////////////////
 
@@ -13,39 +15,110 @@ void matMul2D_out(TensorView &A, TensorView &B, TensorView &O)
     auto o_shape = O.shape();
     auto a_shape = A.shape();
 
-    // version 1 - naive version
-    // for (size_t i = 0; i < out_shape[0]; ++i)
-    // {
-    //     for (size_t k = 0; k < out_shape[1]; ++k)
-    //     {
-    //         float sum = 0;
-    //         for (size_t j = 0; j < a_shape[1]; ++j)
-    //         {
-    //             sum += (A(i, j) * B(j, k));
-    //         }
-    //         result(i, k) = sum;
-    //     }
-    // }
-
-    // version 2 - promotes CPU caching by only moving from left to right and top to bottom
-    // This version avoid the jumps that the version 1 has thereby
-
-    for (size_t i = 0; i < o_shape[0]; ++i)
+    auto numThreads = std::thread::hardware_concurrency();
+    if (numThreads == 0)
     {
-        for (size_t j = 0; j < a_shape[1]; ++j)
+        // hardware_concurrency can sometimes return 0 when not implemented correctly.
+        numThreads = 4; // fall back value
+    }
+
+    auto action = [&A, &B, &O, &a_shape, &o_shape](size_t startI, size_t endI)
+    {
+        for (size_t i = startI; i < endI; ++i)
         {
-            for (size_t k = 0; k < o_shape[1]; ++k)
+            for (size_t j = 0; j < a_shape[1]; ++j)
             {
-                if (j == 0)
+                if (B.stride()[1] == 1)
                 {
-                    // first time - so directly set the value
-                    O(i, k) = A(i, j) * B(j, k);
+                    // continguous memory - fast path
+                    size_t k = 0;
+                    for (; k + 4 <= o_shape[1]; k += 4)
+                    {
+                        // duplicate a's values to all lanes
+                        float32x4_t a_vec = vld1q_dup_f32(&A(i, j));
+
+                        // load b's values to all lanes directly from contiguous memory
+                        float32x4_t b_vec = vld1q_f32(&B(j, k));
+
+                        if (j == 0)
+                        {
+                            // first time - so directly set the value
+                            float32x4_t temp = vdupq_n_f32(0.0f);
+
+                            // setting the value of 0 to the destination
+                            vst1q_f32(&O(i, k), temp);
+                        }
+
+                        float32x4_t o_vec = vld1q_f32(&O(i, k));
+
+                        o_vec = vmlaq_f32(o_vec, a_vec, b_vec);
+                        vst1q_f32(&O(i, k), o_vec);
+                    }
+
+                    if (o_shape[1] % 4 != 0)
+                    {
+                        for (; k < o_shape[1]; ++k)
+                        {
+                            if (j == 0)
+                            {
+                                O(i, k) = A(i, j) * B(j, k);
+                            }
+                            else
+                            {
+                                O(i, k) += A(i, j) * B(j, k);
+                            }
+                        }
+                    }
                 }
                 else
                 {
-                    O(i, k) += (A(i, j) * B(j, k));
+                    for (size_t k = 0; k < o_shape[1]; ++k)
+                    {
+                        if (j == 0)
+                        {
+                            O(i, k) = A(i, j) * B(j, k);
+                        }
+                        else
+                        {
+                            O(i, k) += A(i, j) * B(j, k);
+                        }
+                    }
                 }
             }
+        }
+    };
+
+    auto totalIters = o_shape[0];
+    auto chunkSize = (totalIters + numThreads - 1) / numThreads;
+
+    std::vector<std::thread> threads;
+    for (unsigned int i = 0; i < numThreads; ++i)
+    {
+        // for every thread compute start and end
+        size_t startIdx = i * chunkSize;
+        size_t endIdx = (i + 1) * chunkSize;
+
+        if (startIdx >= totalIters)
+        {
+            // extra threads - do nothing in this case
+            continue;
+        }
+
+        if (i == numThreads - 1)
+        {
+            // final thread so do remaining iters
+            endIdx = totalIters;
+        }
+
+        threads.emplace_back([&action, startIdx, endIdx]
+                             { action(startIdx, endIdx); });
+    }
+
+    for (auto &th : threads)
+    {
+        if (th.joinable())
+        {
+            th.join();
         }
     }
 }

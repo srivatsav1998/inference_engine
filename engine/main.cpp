@@ -106,35 +106,43 @@ TensorView embedTokens(std::vector<size_t> tokenIds, TensorView &wpe, TensorView
     return result;
 }
 
-size_t infer(std::vector<size_t> &prompt, GPT2Model &model, ArenaAllocator &alloc)
+void infer(std::vector<size_t> &prompt, GPT2Model &model, ArenaAllocator &alloc)
 {
-    TensorView X = embedTokens(prompt, model.wpe_weight, model.wte_weight, 0, alloc);
-
-    // attention part
-    for (int i = 0; i < 12; ++i)
+    auto max_new_tokens = 5;
+    for (int tokens = 0; tokens < max_new_tokens; tokens++)
     {
-        auto normX = layerNorm(X, model.layers[i].ln_1_weight, model.layers[i].ln_1_bias, alloc);
-        auto attn_out = forwardAttention(normX, model.layers[i].attn_c_attn_weight, model.layers[i].attn_c_attn_bias, model.layers[i].attn_c_proj_weight, model.layers[i].attn_c_proj_bias, alloc);
+        TensorView X = embedTokens(prompt, model.wpe_weight, model.wte_weight, 0, alloc);
 
-        // residual connection
-        add2D_inplace(X, attn_out);
+        // attention part
+        for (int i = 0; i < 12; ++i)
+        {
+            auto normX = layerNorm(X, model.layers[i].ln_1_weight, model.layers[i].ln_1_bias, alloc);
+            auto attn_out = forwardAttention(normX, model.layers[i].attn_c_attn_weight, model.layers[i].attn_c_attn_bias, model.layers[i].attn_c_proj_weight, model.layers[i].attn_c_proj_bias, alloc);
 
-        normX = layerNorm(X, model.layers[i].ln_2_weight, model.layers[i].ln_2_bias, alloc);
-        auto mlp_out = forwardMLP(normX, model.layers[i].mlp_c_fc_weight, model.layers[i].mlp_c_fc_bias, model.layers[i].mlp_c_proj_weight, model.layers[i].mlp_c_proj_bias, alloc);
+            // residual connection
+            add2D_inplace(X, attn_out);
 
-        // residual connection
-        add2D_inplace(X, mlp_out);
+            normX = layerNorm(X, model.layers[i].ln_2_weight, model.layers[i].ln_2_bias, alloc);
+            auto mlp_out = forwardMLP(normX, model.layers[i].mlp_c_fc_weight, model.layers[i].mlp_c_fc_bias, model.layers[i].mlp_c_proj_weight, model.layers[i].mlp_c_proj_bias, alloc);
+
+            // residual connection
+            add2D_inplace(X, mlp_out);
+        }
+
+        // final layerNormalization
+        auto out = layerNorm(X, model.ln_f_weight, model.ln_f_bias, alloc);
+
+        // un-embedding projection
+        auto wte_trans = transpose2D(model.wte_weight);
+        out = matMul2D(out, wte_trans, alloc);
+
+        // extracting next word
+        auto tokenId = extractNextTokenId(out);
+        prompt.push_back(tokenId);
+
+        // resetting memory
+        alloc.reset();
     }
-
-    // final layerNormalization
-    auto out = layerNorm(X, model.ln_f_weight, model.ln_f_bias, alloc);
-
-    // un-embedding projection
-    auto wte_trans = transpose2D(model.wte_weight);
-    out = matMul2D(out, wte_trans, alloc);
-
-    // extracting next word
-    return extractNextTokenId(out);
 }
 
 int main()
@@ -158,9 +166,14 @@ int main()
     // In GPT-2, token 15496 is "This", 318 is " is", 257 is " a", and 1332 is " test".
     std::vector<size_t> dummy_prompt = {15496, 318, 257, 1332};
 
-    auto out = infer(dummy_prompt, model, arena);
+    infer(dummy_prompt, model, arena);
 
-    std::cout << "Out token: " << out << std::endl;
+    for (auto token : dummy_prompt)
+    {
+        std::cout << token << " ";
+    }
+
+    std::cout << std::endl;
 
     return 0;
 }

@@ -26,8 +26,8 @@ Key objectives:
 - [x] Implement `GELU` (Gaussian Error Linear Unit) activation function.
 - [x] Implement `Softmax` for attention scores.
 - [x] Implement Naive Matrix Multiplication (`MatMul`).
-- [ ] Optimize `MatMul` with ARM NEON SIMD (Vectorization).
-- [ ] Optimize `MatMul` with C++ `std::thread` pool (Multi-threading).
+- [x] Optimize `MatMul` with ARM NEON SIMD (Vectorization).
+- [x] Optimize `MatMul` with C++ `std::thread` pool (Multi-threading).
 
 ### Phase 3: Transformer Block Components
 - [x] Implement Token Embedding (`wte`) & Positional Embedding (`wpe`) Lookup.
@@ -39,7 +39,7 @@ Key objectives:
 ### Phase 4: Full Engine Assembly & Token Generation
 - [x] Chain 12 Transformer Blocks together.
 - [x] Implement final `LayerNorm` and language modeling head (projection to vocab size).
-- [ ] Implement generation loop (Autoregressive).
+- [x] Implement generation loop (Autoregressive).
 - [ ] Implement Sampling strategies (Greedy, Temperature, Top-K/Top-P).
 - [ ] (Optional) Integrate simple BPE Tokenizer or accept CLI token IDs.
 
@@ -49,6 +49,9 @@ Key objectives:
 | Engine Version | Optimization Level | CPU Threads | Hardware | Tokens | Time (s) |
 | --- | --- | --- | --- | --- | --- |
 | v0.1 (Naive C++) | `-O3` | 1 | Apple Silicon M2 | 4 | ~4.37s |
+| v0.2 (`std::thread`) | `-O3` | 8 | Apple Silicon M2 | 4 | ~1.26s |
+| v0.3 (NEON SIMD) | `-O3` | 8 | Apple Silicon M2 | 4 | ~0.94s |
+| v1.0 (Autoregressive Loop) | `-O3` | 8 | Apple Silicon M2 | 4 + 5 generated | ~7.52s |
 
 
 ---
