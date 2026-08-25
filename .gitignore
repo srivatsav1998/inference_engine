@@ -12,3 +12,6 @@ model_convertor/model_weights.bin
 
 # Node
 node_modules/
+
+# vscode 
+engine/.vscode/

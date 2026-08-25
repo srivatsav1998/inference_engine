@@ -43,6 +43,14 @@ Key objectives:
 - [ ] Implement Sampling strategies (Greedy, Temperature, Top-K/Top-P).
 - [ ] (Optional) Integrate simple BPE Tokenizer or accept CLI token IDs.
 
+### Phase 5: Production Polish & Optimization
+- [ ] Refactor C++ concurrency to use a global Thread Pool (eliminates Thread Explosion).
+- [ ] Build a Python Frontend / API binding (via `pybind11` or `ctypes`) to handle Tokenization and UI.
+- [ ] Architectural Refactor: Separate declarations (`.hpp`) from implementations (`.cpp`) for cleaner code.
+- [ ] Expand Unit Testing suite to cover Transformer components and KV-Cache.
+- [ ] Add Doxygen-style documentation across the codebase.
+- [ ] (Advanced) Metal Backend: Offload `MatMul` to the M2 GPU using Apple Metal Performance Shaders (MPS).
+
 ---
 
 ## Benchmarks
@@ -52,6 +60,7 @@ Key objectives:
 | v0.2 (`std::thread`) | `-O3` | 8 | Apple Silicon M2 | 4 | ~1.26s |
 | v0.3 (NEON SIMD) | `-O3` | 8 | Apple Silicon M2 | 4 | ~0.94s |
 | v1.0 (Autoregressive Loop) | `-O3` | 8 | Apple Silicon M2 | 4 + 5 generated | ~7.52s |
+| v1.1 (KV-Cache) | `-O3` | 8 | Apple Silicon M2 | 4 + 8 generated | ~6.37s |
 
 
 ---

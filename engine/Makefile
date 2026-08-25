@@ -1,10 +1,10 @@
 CXX      := g++
-CXXFLAGS := -std=c++20 -Wall -Wextra -g -O3 -MMD -MP -I/opt/homebrew/Cellar/nlohmann-json/3.12.0/include
+CXXFLAGS := -std=c++20 -Wall -Wextra -g -O3 -MMD -MP -fPIC -I/opt/homebrew/Cellar/nlohmann-json/3.12.0/include
 
 BIN_DIR  := bin
 OBJ_DIR  := $(BIN_DIR)/obj
 
-TARGET   := $(BIN_DIR)/engine
+TARGET   := $(BIN_DIR)/libengine.dylib
 SRCS     := $(wildcard *.cpp)
 OBJS     := $(patsubst %.cpp, $(OBJ_DIR)/%.o, $(SRCS))
 ENGINE_OBJS := $(filter-out $(OBJ_DIR)/main.o, $(OBJS))
@@ -15,7 +15,7 @@ all: $(TARGET)
 # Link the final binary
 $(TARGET): $(OBJS)
 	@mkdir -p $(BIN_DIR)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) $(CXXFLAGS) -shared $^ -o $@
 
 # Compile object files
 $(OBJ_DIR)/%.o: %.cpp
