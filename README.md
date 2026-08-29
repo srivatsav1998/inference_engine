@@ -45,11 +45,18 @@ Key objectives:
 
 ### Phase 5: Production Polish & Optimization
 - [ ] Refactor C++ concurrency to use a global Thread Pool (eliminates Thread Explosion).
-- [ ] Build a Python Frontend / API binding (via `pybind11` or `ctypes`) to handle Tokenization and UI.
+- [x] Build a Python Frontend / API binding (via `pybind11` or `ctypes`) to handle Tokenization and UI.
 - [ ] Architectural Refactor: Separate declarations (`.hpp`) from implementations (`.cpp`) for cleaner code.
 - [ ] Expand Unit Testing suite to cover Transformer components and KV-Cache.
 - [ ] Add Doxygen-style documentation across the codebase.
 - [ ] (Advanced) Metal Backend: Offload `MatMul` to the M2 GPU using Apple Metal Performance Shaders (MPS).
+
+### Phase 6: Modern LLM Architecture (Llama 3 / Gemma)
+- [ ] Implement RoPE (Rotary Positional Embeddings) to replace static `wpe`.
+- [ ] Implement RMSNorm to replace `LayerNorm`.
+- [ ] Implement SwiGLU / SiLU activation to replace `GELU`.
+- [ ] Implement Grouped-Query Attention (GQA) for KV-Cache memory efficiency.
+- [ ] Build Int8 / Int4 Quantization micro-kernels to run 7B+ models in limited RAM.
 
 ---
 

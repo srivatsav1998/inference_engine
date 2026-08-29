@@ -25,11 +25,11 @@ void *init_engine()
     return engine;
 }
 
-void generate(void *enginePtr, unsigned int *prompt, unsigned int prompt_len, unsigned int *output, unsigned int max_tokens)
+void generate(void *enginePtr, unsigned int *prompt, unsigned int prompt_len, unsigned int *output, unsigned int max_tokens, float temperature, unsigned int topK, float topP)
 {
     Engine *engine = static_cast<Engine *>(enginePtr);
 
     std::vector<size_t> prompt_(prompt, prompt + prompt_len);
 
-    engine->infer(prompt_, output, max_tokens);
+    engine->infer(prompt_, output, max_tokens, temperature, static_cast<size_t>(topK), topP);
 }

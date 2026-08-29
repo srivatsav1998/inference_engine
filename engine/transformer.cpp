@@ -5,6 +5,9 @@
 #include "arenaAllocator.hpp"
 #include "tensorView.hpp"
 
+#include <queue>
+#include <random>
+
 TensorView attentionScore(TensorView &Q, TensorView &K, ArenaAllocator &alloc)
 {
     auto K_trans = transpose2D(K);
@@ -112,4 +115,101 @@ size_t extractNextTokenId(TensorView &X)
         }
     }
     return maxIdx;
+}
+
+void applyTempScaling_inplace(TensorView &X, float temperature)
+{
+    auto x_shape = X.shape();
+    if (temperature != 0.0f)
+    {
+        for (size_t j = 0; j < x_shape[1]; ++j)
+        {
+            X(x_shape[0] - 1, j) /= temperature;
+        }
+    }
+}
+
+// returns a vector of pairs containing the top K indices and their corresponding values from the last row of X, sorted in descending order of value
+std::vector<std::pair<float, size_t>> getTopKIndices(TensorView &X, size_t topK)
+{
+    // using a min-heap to keep exactly K elements - each entry has probability and the index
+    std::priority_queue<std::pair<float, size_t>, std::vector<std::pair<float, size_t>>, std::greater<std::pair<float, size_t>>> topKHeap;
+    auto x_shape = X.shape();
+    for (size_t j = 0; j < x_shape[1]; ++j)
+    {
+        topKHeap.push({X(x_shape[0] - 1, j), j});
+        if (topKHeap.size() > topK)
+        {
+            topKHeap.pop();
+        }
+    }
+    std::vector<std::pair<float, size_t>> result;
+    while (!topKHeap.empty())
+    {
+        result.push_back(topKHeap.top());
+        topKHeap.pop();
+    }
+
+    std::sort(result.begin(), result.end(), std::greater<std::pair<float, size_t>>());
+    return result;
+}
+
+std::vector<size_t> applyTopPFiltering(const std::vector<std::pair<float, size_t>> &topKVec, float topP)
+{
+    // consider only till we reach the top-p threshold
+    float cumulativeProb = 0.0f;
+    std::vector<size_t> keptIndices;
+    for (const auto &entry : topKVec)
+    {
+        cumulativeProb += entry.first;
+        keptIndices.push_back(entry.second);
+        if (cumulativeProb >= topP)
+        {
+            break;
+        }
+    }
+    return keptIndices;
+}
+
+size_t sampleTokenIdx(TensorView &X, float temperature, size_t topK, float topP)
+{
+    // first perform temperature scaling on the last row of X
+    applyTempScaling_inplace(X, temperature);
+
+    // convert the logits to probabilities
+    // TODO: Add verSplit to TensorView to avoid applying softmax to all rows during the prefill phase
+    softmax_inplace(X);
+
+    // apply top-k filtering
+    auto topKVec = getTopKIndices(X, topK);
+
+    // apply top-p filtering
+    auto keptIndices = applyTopPFiltering(topKVec, topP);
+
+    // the new max might not be 1.0f after filtering
+    float sumProb = 0.0f;
+    for (const auto &idx : keptIndices)
+    {
+        sumProb += X(X.shape()[0] - 1, idx);
+    }
+
+    // perform sampling from the kept indices
+    std::random_device rd;
+    std::mt19937 gen(rd());
+
+    std::uniform_real_distribution<float> dis(0.0f, sumProb);
+
+    float tar = dis(gen);
+
+    float cumulativeProb = 0.0f;
+    for (size_t i = 0; i < keptIndices.size(); ++i)
+    {
+        cumulativeProb += X(X.shape()[0] - 1, keptIndices[i]);
+        if (tar <= cumulativeProb)
+        {
+            return keptIndices[i];
+        }
+    }
+
+    return keptIndices.back();
 }

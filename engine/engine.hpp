@@ -11,7 +11,7 @@ class Engine
 public:
     Engine(size_t arenaSize, const char *modelWeightsPath, const char *modelConfigPath);
 
-    void infer(std::vector<size_t> &prompt, unsigned int *reponse, unsigned int maxTokens);
+    void infer(std::vector<size_t> &prompt, unsigned int *reponse, unsigned int maxTokens, float temperature, size_t topK, float topP);
 
 private:
     ModelWeightsLoader loader_;

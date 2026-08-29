@@ -32,7 +32,7 @@ Engine::Engine(size_t arenaSize, const char *modelWeightsPath, const char *model
     model_ = buildModel(loader_, modelConfigPath);
 }
 
-void Engine::infer(std::vector<size_t> &prompt, unsigned int *response, unsigned int maxTokens)
+void Engine::infer(std::vector<size_t> &prompt, unsigned int *response, unsigned int maxTokens, float temperature, size_t topK, float topP)
 {
     // copy contents of prompt to response
     auto respIdx = 0;
@@ -89,7 +89,7 @@ void Engine::infer(std::vector<size_t> &prompt, unsigned int *response, unsigned
         out = matMul2D(out, wte_trans, arena_);
 
         // extracting next word
-        auto tokenId = extractNextTokenId(out);
+        auto tokenId = sampleTokenIdx(out, temperature, topK, topP);
         response[respIdx++] = tokenId;
         prompt.push_back(tokenId);
 
