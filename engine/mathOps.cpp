@@ -2,9 +2,9 @@
 
 #include "tensorView.hpp"
 #include "arenaAllocator.hpp"
+#include "taskQueue.hpp"
 
 #include <numbers>
-#include <thread>
 #include <arm_neon.h>
 
 //////////////// Accepts output Variants ////////////////
@@ -90,7 +90,8 @@ void matMul2D_out(TensorView &A, TensorView &B, TensorView &O)
     auto totalIters = o_shape[0];
     auto chunkSize = (totalIters + numThreads - 1) / numThreads;
 
-    std::vector<std::thread> threads;
+    auto &taskQueue = TaskQueue::getInstance();
+
     for (unsigned int i = 0; i < numThreads; ++i)
     {
         // for every thread compute start and end
@@ -108,17 +109,13 @@ void matMul2D_out(TensorView &A, TensorView &B, TensorView &O)
             endIdx = totalIters;
         }
 
-        threads.emplace_back([&action, startIdx, endIdx]
-                             { action(startIdx, endIdx); });
+        taskQueue.enqueueTask([&action, startIdx, endIdx]
+                              { action(startIdx, endIdx); });
     }
 
-    for (auto &th : threads)
-    {
-        if (th.joinable())
-        {
-            th.join();
-        }
-    }
+    std::unique_lock lck(taskQueue.tasksCntMutex_);
+    taskQueue.tasksCntCv_.wait(lck, [&taskQueue]
+                               { return taskQueue.tasksCnt_.load() == 0; });
 }
 
 //////////////// General Variants ////////////////
