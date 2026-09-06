@@ -88,6 +88,7 @@ void matMul2D_out(TensorView &A, TensorView &B, TensorView &O)
     };
 
     auto totalIters = o_shape[0];
+
     auto chunkSize = (totalIters + numThreads - 1) / numThreads;
 
     auto &taskQueue = TaskQueue::getInstance();

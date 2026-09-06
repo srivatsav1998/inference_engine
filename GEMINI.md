@@ -13,8 +13,9 @@ This project is a custom, zero-dependency C++ inference engine for a 124M parame
 - **API**: Exposes a C-linkage API (`engineAPI.cpp`) compiled to `libengine.dylib`.
 - **Frontend**: A minimal Python wrapper (`frontend.py`) using `ctypes` and `tiktoken`.
 
-# Next Step (Parked)
-The user has paused the project and will resume later.
-**Immediate Next Task**: Begin Phase 2: **The DAG Execution Runtime Refactor**. 
+# Current Step
+**Phase 2: The DAG Execution Runtime Refactor**
+
 **Context**: We decided to go all-in on building a generic ML Compiler architecture (Frontend IR -> Graph Parser -> C++ Execution Runtime).
-**First Action Item upon return**: Implement an E2E Regression test locally on the current hardcoded engine using Greedy Decoding (temperature = 0.0) so we have a mathematical ground truth to verify against before the C++ engine is gutted.
+*   **Completed**: E2E Regression test (Greedy Decoding) to establish mathematical ground truth.
+*   **Immediate Next Task**: Begin designing/implementing the Frontend IR and Graph Parser for the C++ Execution Runtime.

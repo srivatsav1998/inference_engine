@@ -44,9 +44,12 @@ TaskQueue::TaskQueue()
 
                 task();
 
-                if (--this->tasksCnt_ == 0)
                 {
-                    this->tasksCntCv_.notify_all();
+                    std::lock_guard lck(this->tasksCntMutex_);
+                    if (--this->tasksCnt_ == 0)
+                    {
+                        this->tasksCntCv_.notify_all();
+                    }
                 }
             }
         };
