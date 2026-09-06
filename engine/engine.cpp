@@ -89,7 +89,18 @@ void Engine::infer(std::vector<size_t> &prompt, unsigned int *response, unsigned
         out = matMul2D(out, wte_trans, arena_);
 
         // extracting next word
-        auto tokenId = sampleTokenIdx(out, temperature, topK, topP);
+        size_t tokenId;
+
+        float diff = std::abs(temperature - 0.0f);
+        if (diff < 1e-6f)
+        {
+            tokenId = extractNextTokenId(out);
+        }
+        else
+        {
+            tokenId = sampleTokenIdx(out, temperature, topK, topP);
+        }
+
         response[respIdx++] = tokenId;
         prompt.push_back(tokenId);
 

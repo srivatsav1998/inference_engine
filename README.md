@@ -15,17 +15,21 @@ Key objectives:
 *Note: The initial 0-to-1 prototype phases (Tensor memory, basic MatMul, GPT-2 assembly, KV-Cache) are completed. See [PROTOTYPE_ARCHIVE.md](./PROTOTYPE_ARCHIVE.md) for the historical completion list.*
 
 ### Phase 1: Architectural Decoupling & Concurrency
-- [ ] Refactor architecture: Separate declarations (`.hpp`) from implementations (`.cpp`) for clean compilation boundaries.
-- [ ] Implement a global lock-free Task Queue / Thread Pool (fixes `std::thread` explosion per operation).
-- [ ] Abstract hardcoded GPT-2 logic into a generic `ModelLoader` class to support arbitrary graphs.
+- [x] Refactor architecture: Separate declarations (`.hpp`) from implementations (`.cpp`) for clean compilation boundaries.
+- [x] Implement a global lock-free Task Queue / Thread Pool (fixes `std::thread` explosion per operation).
 
-### Phase 2: Cryptographic Correctness & CI/CD
+### Phase 2: The DAG Execution Runtime Refactor
+- [ ] Implement local E2E Regression Test (Greedy Decoding) on the current engine to establish a ground-truth baseline.
+- [ ] *Design and implement the generic ML Compiler architecture (Frontend IR -> Graph Parser -> C++ Execution Runtime).*
+- [ ] *(Sub-tasks to be expanded and defined as the architectural design becomes concrete)*
+
+### Phase 3: Cryptographic Correctness & CI/CD
 - [ ] Integrate lightweight C++ testing framework (Catch2 or GoogleTest).
 - [ ] Write unit tests for individual math micro-kernels (SIMD MatMul vs. Naive MatMul).
 - [ ] Set up GitHub Actions CI pipeline (auto-build on commit).
-- [ ] Implement automated regression test: forward pass on a tiny model asserting PyTorch logit parity (1e-4 tolerance).
+- [ ] Port the local E2E regression test into the automated CI pipeline.
 
-### Phase 3: Engine Generalization (Llama 3 / Gemma)
+### Phase 4: Engine Generalization (Llama 3 / Gemma)
 - [ ] Implement RoPE (Rotary Positional Embeddings) to replace static `wpe`.
 - [ ] Implement RMSNorm to replace `LayerNorm`.
 - [ ] Implement SwiGLU / SiLU activation.
@@ -33,7 +37,7 @@ Key objectives:
 - [ ] Implement robust Sampling strategies (Greedy, Temperature, Top-K/Top-P).
 - [ ] Integrate simple BPE/SentencePiece Tokenizer in C++ to reduce Python frontend dependency.
 
-### Phase 4: Quantization & Advanced Memory Efficiency
+### Phase 5: Quantization & Advanced Memory Efficiency
 - [ ] Design Int8 / Int4 quantization formats for tensor weights.
 - [ ] Write custom SIMD kernels to multiply quantized integers and dequantize on the fly.
 - [ ] (Advanced) Offload MatMul to Apple Silicon M2 GPU using Metal Performance Shaders (MPS).
