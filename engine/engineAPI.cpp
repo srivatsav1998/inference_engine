@@ -5,17 +5,26 @@
 #include <iostream>
 #include <stdexcept>
 
-constexpr const char *MODEL_WEIGHTS_FILE_PATH = "/Users/srivatsavg/Desktop/workspace/projects/inference_engine/model_convertor/model_weights.bin";
-constexpr const char *MODEL_CONFIG_FILE_PATH = "/Users/srivatsavg/Desktop/workspace/projects/inference_engine/model_convertor/model_offsets.json";
+#include <cstdlib>
+#include <string>
+
+constexpr const char *MODEL_WEIGHTS_FILE_NAME = "model_weights.bin";
+constexpr const char *MODEL_CONFIG_FILE_NAME = "model_offsets.json";
 
 void *init_engine()
 {
     // initializing the engine with default parameters
     Engine *engine;
 
+    const char* env_p = std::getenv("ENGINE_BIN_DIR");
+    std::string bin_dir = env_p ? std::string(env_p) : ".";
+    
+    std::string weights_path = bin_dir + "/" + MODEL_WEIGHTS_FILE_NAME;
+    std::string config_path = bin_dir + "/" + MODEL_CONFIG_FILE_NAME;
+
     try
     {
-        engine = new Engine(90, MODEL_WEIGHTS_FILE_PATH, MODEL_CONFIG_FILE_PATH);
+        engine = new Engine(90, weights_path.c_str(), config_path.c_str());
     }
     catch (std::exception &ex)
     {
