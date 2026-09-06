@@ -89,6 +89,14 @@ void matMul2D_out(TensorView &A, TensorView &B, TensorView &O)
 
     auto totalIters = o_shape[0];
 
+    if (totalIters <= 4)
+    {
+        // lower totalIters value doesn't justify the massive overhead of a threadpool
+        // hence execute and return early
+        action(0, totalIters);
+        return;
+    }
+
     auto chunkSize = (totalIters + numThreads - 1) / numThreads;
 
     auto &taskQueue = TaskQueue::getInstance();

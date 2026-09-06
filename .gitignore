@@ -2,7 +2,7 @@
 .DS_Store
 
 # Build artifacts
-engine/bin/
+bin/
 *.o
 *.d
 

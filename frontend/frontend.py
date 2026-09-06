@@ -4,8 +4,13 @@ import os
 import tiktoken
 
 ### Setup
-bin_path = os.path.abspath("/Users/srivatsavg/Desktop/workspace/projects/inference_engine/engine/bin/")
-lib_path = bin_path + os.path.sep + "libengine.dylib"
+# Dynamically resolve the bin directory relative to this script
+current_dir = os.path.dirname(os.path.abspath(__file__))
+bin_path = os.path.abspath(os.path.join(current_dir, '..', 'bin'))
+lib_path = os.path.join(bin_path, 'libengine.dylib')
+
+# Inject the bin path into the environment so the C++ daemon knows where to look for weights
+os.environ["ENGINE_BIN_DIR"] = bin_path
 
 engine = ctypes.CDLL(lib_path)
 
