@@ -18,11 +18,43 @@ Key objectives:
 - [x] Refactor architecture: Separate declarations (`.hpp`) from implementations (`.cpp`) for clean compilation boundaries.
 - [x] Implement a global lock-free Task Queue / Thread Pool (fixes `std::thread` explosion per operation).
 
-### Phase 2: The DAG Execution Runtime Refactor
+### Phase 2: The DAG Execution Runtime Refactor (Active Milestone)
 - [x] Implement local E2E Regression Test (Greedy Decoding) on the current engine to establish a ground-truth baseline.
 - [x] Standardize repository layout (`scripts/`, `tests/unit/`, `tests/e2e/`, clean portable `Makefile`).
-- [ ] *Design and implement the generic ML Compiler architecture (Frontend IR -> Graph Parser -> C++ Execution Runtime).*
-- [ ] *(Sub-tasks to be expanded and defined as the architectural design becomes concrete)*
+- [x] Automated CI/CD pipeline on macOS ARM64 with sub-second deterministic synthetic regression test.
+- [ ] **Step 1: Module Decoupling**:
+  - Relocate model-agnostic primitives (`TensorView`, `ArenaAllocator`, `TaskQueue`, `ModelWeightsLoader`) to `core/`.
+  - Relocate math micro-kernels to `ops/` with operator enum / visitor dispatch.
+- [ ] **Step 2: Graph Data Structures (`graph/`)**:
+  - Design `Node` class (operation type, input/output tensor pointers, attributes).
+  - Design `Graph` / `ModelDAG` container with dependency tracking and topological sorting.
+- [ ] **Step 3: Hardcoded GPT-2 DAG Prototype**:
+  - Construct the GPT-2 forward graph using graph nodes in C++ to validate runtime execution against `make check` and `make test_full`.
+- [ ] **Step 4: Lifetime-Aware Memory Planner**:
+  - Implement tensor lifetime analysis to reuse intermediate activation buffers across non-overlapping nodes instead of naive linear bump allocation.
+- [ ] **Step 5: Frontend IR & Graph Parser**:
+  - Define an external graph schema (JSON/custom IR) and implement a C++ graph compiler to parse and execute arbitrary models.
+
+---
+
+## Quickstart & Testing
+
+```bash
+# Build engine and run standard test suite (C++ micro-kernels + synthetic E2E, ~1.5s)
+make check
+
+# Run C++ unit tests only (doctest, 2,157 assertions)
+make test
+
+# Run fast synthetic E2E regression test (< 1s, zero downloads)
+make test_synthetic
+
+# Run full real GPT-2 124M greedy decoding regression test (requires real weights in bin/)
+make test_full
+
+# Download & export real HuggingFace GPT-2 weights
+make weights
+```
 
 ### Phase 3: Cryptographic Correctness & CI/CD
 - [x] Integrate lightweight C++ testing framework (`doctest.h`).

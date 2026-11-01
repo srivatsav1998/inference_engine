@@ -3,8 +3,14 @@ name: Engine CI
 on:
   push:
     branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - '.agents/**'
   pull_request:
     branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - '.agents/**'
 
 jobs:
   build-and-test:
