@@ -1,13 +1,15 @@
 
 import ctypes
 import os
+import sys
 import tiktoken
 
 ### Setup
 # Dynamically resolve the bin directory relative to this script
 current_dir = os.path.dirname(os.path.abspath(__file__))
 bin_path = os.path.abspath(os.path.join(current_dir, '..', 'bin'))
-lib_path = os.path.join(bin_path, 'libengine.dylib')
+lib_ext = ".dylib" if sys.platform == "darwin" else ".so"
+lib_path = os.path.join(bin_path, f'libengine{lib_ext}')
 
 # Inject the bin path into the environment so the C++ daemon knows where to look for weights
 os.environ["ENGINE_BIN_DIR"] = bin_path

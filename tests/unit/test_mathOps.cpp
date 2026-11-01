@@ -1,6 +1,6 @@
-#include "../tensorView.hpp"
-#include "../arenaAllocator.hpp"
-#include "../mathOps.hpp"
+#include "tensorView.hpp"
+#include "arenaAllocator.hpp"
+#include "mathOps.hpp"
 #include <iostream>
 #include <cmath>
 #include <cassert>

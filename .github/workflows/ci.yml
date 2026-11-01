@@ -1,0 +1,54 @@
+name: Engine CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    name: Build & Test (macOS ARM64)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies via Homebrew
+        run: |
+          brew install nlohmann-json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: "scripts/requirements.txt"
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r scripts/requirements.txt
+
+      - name: Build Engine & Run C++ Unit Tests
+        run: |
+          make test
+
+      - name: Cache GPT-2 weights
+        id: cache-weights
+        uses: actions/cache@v4
+        with:
+          path: |
+            bin/model_weights.bin
+            bin/model_offsets.json
+          key: gpt2-weights-${{ hashFiles('scripts/convert_weights.py') }}
+
+      - name: Generate Model Weights (if not cached)
+        if: steps.cache-weights.outputs.cache-hit != 'true'
+        run: |
+          make weights
+
+      - name: Run E2E Greedy Decoding Regression Test
+        run: |
+          make test_e2e

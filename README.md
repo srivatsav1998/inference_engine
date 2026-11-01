@@ -19,13 +19,14 @@ Key objectives:
 - [x] Implement a global lock-free Task Queue / Thread Pool (fixes `std::thread` explosion per operation).
 
 ### Phase 2: The DAG Execution Runtime Refactor
-- [ ] Implement local E2E Regression Test (Greedy Decoding) on the current engine to establish a ground-truth baseline.
+- [x] Implement local E2E Regression Test (Greedy Decoding) on the current engine to establish a ground-truth baseline.
+- [x] Standardize repository layout (`scripts/`, `tests/unit/`, `tests/e2e/`, clean portable `Makefile`).
 - [ ] *Design and implement the generic ML Compiler architecture (Frontend IR -> Graph Parser -> C++ Execution Runtime).*
 - [ ] *(Sub-tasks to be expanded and defined as the architectural design becomes concrete)*
 
 ### Phase 3: Cryptographic Correctness & CI/CD
 - [ ] Integrate lightweight C++ testing framework (Catch2 or GoogleTest).
-- [ ] Write unit tests for individual math micro-kernels (SIMD MatMul vs. Naive MatMul).
+- [x] Write unit tests for individual math micro-kernels (SIMD MatMul vs. Naive MatMul, GELU, LayerNorm, Softmax).
 - [ ] Set up GitHub Actions CI pipeline (auto-build on commit).
 - [ ] Port the local E2E regression test into the automated CI pipeline.
 
@@ -53,6 +54,16 @@ Key objectives:
 | v1.0 (Autoregressive Loop) | `-O3` | 8 | Apple Silicon M2 | 4 + 5 generated | ~7.52s |
 | v1.1 (KV-Cache) | `-O3` | 8 | Apple Silicon M2 | 4 + 8 generated | ~6.37s |
 
+
+---
+
+## Hardware & Platform Requirements
+- **Architecture**: **ARM64 / AArch64 only** (Apple Silicon M1/M2/M3/M4 or Linux AArch64). The engine's core micro-kernels directly invoke ARM NEON SIMD intrinsics (`<arm_neon.h>`) for vectorized float operations. It will **not** compile or run on x86_64 (Intel/AMD) machines without porting kernels to AVX2 or using an emulation header like `neon2sse`.
+- **Operating System**: macOS (Apple Silicon) or Linux (AArch64).
+  - On macOS, `nlohmann-json` header path is resolved dynamically via Homebrew (`brew install nlohmann-json`).
+  - On Linux (AArch64), `nlohmann-json3-dev` should be installed via system package manager (`apt install nlohmann-json3-dev`).
+- **Compiler**: C++20-compliant compiler (Apple Clang 15+ or GCC 11+).
+- **Python**: Python 3.9+ with packages in `scripts/requirements.txt` (PyTorch, Transformers, Tiktoken, NumPy).
 
 ---
 

@@ -1,17 +1,30 @@
 # macOS
 .DS_Store
+**/.DS_Store
 
 # Build artifacts
 bin/
 *.o
 *.d
+*.dylib
+*.so
+*.a
 
-# Large model weights
-model_convertor/*.bin
-model_convertor/model_weights.bin
+# Test executables
+tests/unit/test_mathOps
 
-# Node
-node_modules/
+# Python virtual environment & cache
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
 
-# vscode 
-engine/.vscode/
+# Large model weights & generated offsets
+*.bin
+model_weights.bin
+model_offsets.json
+
+# IDE config (uncomment if you want to ignore local settings)
+# .vscode/
