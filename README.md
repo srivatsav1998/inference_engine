@@ -27,8 +27,10 @@ Key objectives:
 ### Phase 3: Cryptographic Correctness & CI/CD
 - [x] Integrate lightweight C++ testing framework (`doctest.h`).
 - [x] Write comprehensive unit tests for individual math micro-kernels (SIMD MatMul, transposed fallback, M=1 decoding, GELU, LayerNorm, Softmax stability, in-place variants).
-- [x] Set up GitHub Actions CI pipeline (auto-build on commit).
-- [x] Port the local E2E regression test into the automated CI pipeline.
+- [x] Set up GitHub Actions CI pipeline with fast synthetic E2E regression test (<1s execution, zero network calls).
+- [x] Retain full real GPT-2 124M greedy decoding test for manual local regression verification (`make test_full`).
+- [ ] **(TODO: Medium Term)** Implement native C++ `safetensors` loader (zero-copy parsing directly into `TensorView` without Python conversion).
+- [ ] **(TODO: Medium Term)** Dynamic architecture dimensions (replace `#define EMBEDDING_SIZE 768` and 12-layer hardcoding to support truly arbitrary models and tiny fixtures).
 
 ### Phase 4: Engine Generalization (Llama 3 / Gemma)
 - [ ] Implement RoPE (Rotary Positional Embeddings) to replace static `wpe`.

@@ -29,6 +29,13 @@ This project is a custom, zero-dependency C++ inference engine for a 124M parame
 # Current Step
 **Phase 2: Repository Hardening & Testing Infrastructure (Pre-Refactor)**
 
-**Context**: Establishing automated testing (micro-kernels, deterministic greedy decoding) and a CI/CD pipeline before designing the DAG Execution Runtime.
-*   **Completed**: Cleaned repo structure: centralized `scripts/`, organized `tests/unit/` and `tests/e2e/`, portable `Makefile`, cleaned up root `.gitignore`, discarded stale experimental branches.
-*   **Immediate Next Task**: Add GitHub Actions workflow for automated CI/CD and verify local test suite execution.
+**Context**: Robust automated testing and fast CI/CD pipeline established before embarking on the DAG Execution Runtime refactor.
+*   **Completed**: Cleaned repo structure, portable `Makefile`, single-header `doctest.h` test suite (2,157 assertions).
+*   **Completed**: Fast deterministic synthetic E2E regression test for CI (<1s runtime, zero network downloads).
+*   **Completed**: Retained full real GPT-2 greedy decoding regression test for local runs (`make test_full`).
+*   **Completed**: GitHub Actions workflow running on macOS ARM64.
+*   **Immediate Next Task**: Begin designing the DAG Execution Runtime (Frontend IR -> Graph Node & Topology -> Execution Scheduler).
+
+# Roadmap / Future Enhancements
+*   **Direct C++ Safetensors Loader**: Implement native `.safetensors` zero-copy ingestion via `mmap` + `nlohmann-json` to bypass Python conversion scripts.
+*   **Dynamic Architecture Dimensions**: Parameterize `EMBEDDING_SIZE` and `num_layers` in C++ engine to support arbitrary LLM architectures and micro fixtures.

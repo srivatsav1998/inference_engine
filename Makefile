@@ -46,31 +46,44 @@ $(OBJ_DIR)/engine/%.o: engine/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# Build and run C++ unit tests
+# Build and run C++ unit tests (doctest)
 test: $(TARGET) $(TEST_OBJS)
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CXXFLAGS) $(TEST_UNIT_SRC) $(TEST_OBJS) -o $(TEST_UNIT_BIN)
 	@echo "Running C++ Unit Tests..."
 	@./$(TEST_UNIT_BIN)
 
-# Run Python E2E deterministic greedy decoding test
-test_e2e: $(TARGET)
-	@echo "Running E2E Greedy Decoding Regression Test..."
+# Fast E2E deterministic synthetic regression test (Zero download, < 1 second)
+test_synthetic: $(TARGET)
+	@echo "Running Synthetic E2E Regression Test..."
+	@$(PYTHON) tests/e2e/test_synthetic_regression.py
+
+# Full E2E greedy decoding regression test (Requires real HuggingFace weights)
+test_full: $(TARGET)
+	@echo "Running Full Real GPT-2 E2E Greedy Decoding Regression Test..."
 	@$(PYTHON) tests/e2e/test_greedy_decoding.py
 
-# Run all tests
-check: test test_e2e
+# Default E2E points to fast synthetic test
+test_e2e: test_synthetic
 
-# Generate weights using Python script
+# Run default fast test suite (C++ micro-kernels + Synthetic E2E)
+check: test test_synthetic
+
+# Generate synthetic weights on demand
+synthetic_weights:
+	@mkdir -p $(BIN_DIR)/synthetic
+	@$(PYTHON) scripts/generate_synthetic_weights.py --out-dir $(BIN_DIR)/synthetic
+
+# Generate full real weights from HuggingFace
 weights:
 	@mkdir -p $(BIN_DIR)
-	@echo "Exporting weights to $(BIN_DIR)..."
+	@echo "Exporting HuggingFace weights to $(BIN_DIR)..."
 	@$(PYTHON) scripts/convert_weights.py --out-dir $(BIN_DIR)
 
 # Clean build artifacts (keeps model weights intact)
 clean:
 	rm -rf $(OBJ_DIR) $(TARGET) $(TEST_UNIT_BIN) tests/unit/test_mathOps
 
-.PHONY: all test test_e2e check weights clean
+.PHONY: all test test_synthetic test_full test_e2e check synthetic_weights weights clean
 
 -include $(OBJS:.o=.d)

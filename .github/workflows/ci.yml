@@ -29,26 +29,12 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install -r scripts/requirements.txt
+          pip install numpy
 
       - name: Build Engine & Run C++ Unit Tests
         run: |
           make test
 
-      - name: Cache GPT-2 weights
-        id: cache-weights
-        uses: actions/cache@v4
-        with:
-          path: |
-            bin/model_weights.bin
-            bin/model_offsets.json
-          key: gpt2-weights-${{ hashFiles('scripts/convert_weights.py') }}
-
-      - name: Generate Model Weights (if not cached)
-        if: steps.cache-weights.outputs.cache-hit != 'true'
+      - name: Run Fast Synthetic E2E Regression Test
         run: |
-          make weights
-
-      - name: Run E2E Greedy Decoding Regression Test
-        run: |
-          make test_e2e
+          make test_synthetic
