@@ -25,10 +25,10 @@ Key objectives:
 - [ ] *(Sub-tasks to be expanded and defined as the architectural design becomes concrete)*
 
 ### Phase 3: Cryptographic Correctness & CI/CD
-- [ ] Integrate lightweight C++ testing framework (Catch2 or GoogleTest).
-- [x] Write unit tests for individual math micro-kernels (SIMD MatMul vs. Naive MatMul, GELU, LayerNorm, Softmax).
-- [ ] Set up GitHub Actions CI pipeline (auto-build on commit).
-- [ ] Port the local E2E regression test into the automated CI pipeline.
+- [x] Integrate lightweight C++ testing framework (`doctest.h`).
+- [x] Write comprehensive unit tests for individual math micro-kernels (SIMD MatMul, transposed fallback, M=1 decoding, GELU, LayerNorm, Softmax stability, in-place variants).
+- [x] Set up GitHub Actions CI pipeline (auto-build on commit).
+- [x] Port the local E2E regression test into the automated CI pipeline.
 
 ### Phase 4: Engine Generalization (Llama 3 / Gemma)
 - [ ] Implement RoPE (Rotary Positional Embeddings) to replace static `wpe`.
