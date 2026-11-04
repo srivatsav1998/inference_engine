@@ -8,7 +8,7 @@ ifneq ($(wildcard $(BREW_JSON_INC)),)
 endif
 
 # Expose engine headers
-CXXFLAGS += -Iengine
+CXXFLAGS += -Iengine -Iengine/core -Iengine/ops -Iengine/models
 
 BIN_DIR  := bin
 OBJ_DIR  := $(BIN_DIR)/obj
@@ -21,16 +21,16 @@ else
     TARGET := $(BIN_DIR)/libengine.so
 endif
 
-SRCS     := $(wildcard engine/*.cpp)
+SRCS     := $(wildcard engine/*.cpp) $(wildcard engine/*/*.cpp)
 OBJS     := $(patsubst engine/%.cpp, $(OBJ_DIR)/engine/%.o, $(SRCS))
 
 # Test source & binary
 TEST_UNIT_SRC := tests/unit/test_mathOps.cpp
 TEST_UNIT_BIN := $(BIN_DIR)/test_mathOps
-TEST_OBJS     := $(OBJ_DIR)/engine/arenaAllocator.o \
-                 $(OBJ_DIR)/engine/tensorView.o \
-                 $(OBJ_DIR)/engine/mathOps.o \
-                 $(OBJ_DIR)/engine/taskQueue.o
+TEST_OBJS     := $(OBJ_DIR)/engine/core/arenaAllocator.o \
+                 $(OBJ_DIR)/engine/core/tensorView.o \
+                 $(OBJ_DIR)/engine/ops/mathOps.o \
+                 $(OBJ_DIR)/engine/core/taskQueue.o
 
 # Python executable (prefer .venv if available)
 PYTHON := $(shell if [ -f .venv/bin/python3 ]; then echo .venv/bin/python3; else echo python3; fi)
