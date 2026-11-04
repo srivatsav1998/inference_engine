@@ -88,14 +88,12 @@ void Engine::infer(std::vector<size_t> &prompt, unsigned int *response, unsigned
         // final layerNormalization (reusing normX buffer)
         layerNorm_out(X, model_.ln_f_weight, model_.ln_f_bias, normX);
 
-        // un-embedding projection
-        auto wte_trans = transpose2D(model_.wte_weight);
-
-        std::vector<size_t> out_shape{normX.shape()[0], wte_trans.shape()[1]};
+        // un-embedding projection: normX [N, 768] * wte_weight^T [768, 50257] -> [N, 50257]
+        std::vector<size_t> out_shape{normX.shape()[0], model_.wte_weight.shape()[0]};
         bytesRequired = sizeof(float) * (out_shape[0] * out_shape[1]);
 
         TensorView result(arena_.alloc(bytesRequired), out_shape, 0);
-        matMul2D_out(normX, wte_trans, result);
+        matMul2D_out(normX, model_.wte_weight, result, /*transposeA=*/false, /*transposeB=*/true);
 
         // extracting next word
         size_t tokenId;

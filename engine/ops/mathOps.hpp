@@ -6,9 +6,9 @@ class ArenaAllocator;
 
 //////////////// Accepts output Variants ////////////////
 
-// Matrix Multiplication: O = A * B.
+// Matrix Multiplication: O = (A or A^T) * (B or B^T).
 // CONTRACT: Output buffer O MUST NOT alias input buffers A or B.
-void matMul2D_out(const TensorView &A, const TensorView &B, TensorView &O);
+void matMul2D_out(const TensorView &A, const TensorView &B, TensorView &O, bool transposeA = false, bool transposeB = false);
 
 // Element-wise Matrix Addition: O = A + B.
 // CONTRACT: Supports in-place aliasing (O.get() == A.get() or O.get() == B.get()) with identical strides.
@@ -33,6 +33,3 @@ void layerNorm_out(const TensorView &X, const TensorView &weight, const TensorVi
 // Scalar Multiplication: O = X * val.
 // CONTRACT: Pointwise operation. Supports in-place aliasing (O.get() == X.get()) with identical strides.
 void eleMul2D_out(const TensorView &X, float val, TensorView &O);
-
-// This doesn't allocate memory but returns a new TensorView
-TensorView transpose2D(TensorView &X);

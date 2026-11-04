@@ -9,12 +9,23 @@
 
 //////////////// Accepts output Variants ////////////////
 
-void matMul2D_out(const TensorView &A, const TensorView &B, TensorView &O)
+void matMul2D_out(const TensorView &A, const TensorView &B, TensorView &O, bool transposeA, bool transposeB)
 {
     assert(O.get() != A.get() && O.get() != B.get() && "matMul2D_out: output buffer cannot alias input buffers");
 
-    auto o_shape = O.shape();
     auto a_shape = A.shape();
+    auto b_shape = B.shape();
+    auto o_shape = O.shape();
+
+    size_t M = transposeA ? a_shape[1] : a_shape[0];
+    size_t K_A = transposeA ? a_shape[0] : a_shape[1];
+    size_t K_B = transposeB ? b_shape[1] : b_shape[0];
+    size_t N = transposeB ? b_shape[0] : b_shape[1];
+
+    assert(K_A == K_B && "matMul2D_out: inner dimensions must match");
+    assert(o_shape[0] == M && o_shape[1] == N && "matMul2D_out: output shape mismatch");
+
+    size_t K = K_A;
 
     auto numThreads = std::thread::hardware_concurrency();
     if (numThreads == 0)
@@ -23,42 +34,35 @@ void matMul2D_out(const TensorView &A, const TensorView &B, TensorView &O)
         numThreads = 4; // fall back value
     }
 
-    auto action = [&A, &B, &O, &a_shape, &o_shape](size_t startI, size_t endI)
+    auto action = [&A, &B, &O, N, K, transposeA, transposeB](size_t startI, size_t endI)
     {
-        for (size_t i = startI; i < endI; ++i)
+        if (!transposeA && !transposeB && B.stride()[1] == 1)
         {
-            for (size_t j = 0; j < a_shape[1]; ++j)
+            // Fast contiguous NEON path
+            for (size_t i = startI; i < endI; ++i)
             {
-                if (B.stride()[1] == 1)
+                for (size_t j = 0; j < K; ++j)
                 {
-                    // continguous memory - fast path
+                    float32x4_t a_vec = vld1q_dup_f32(&A(i, j));
                     size_t k = 0;
-                    for (; k + 4 <= o_shape[1]; k += 4)
+                    for (; k + 4 <= N; k += 4)
                     {
-                        // duplicate a's values to all lanes
-                        float32x4_t a_vec = vld1q_dup_f32(&A(i, j));
-
-                        // load b's values to all lanes directly from contiguous memory
                         float32x4_t b_vec = vld1q_f32(&B(j, k));
 
                         if (j == 0)
                         {
-                            // first time - so directly set the value
                             float32x4_t temp = vdupq_n_f32(0.0f);
-
-                            // setting the value of 0 to the destination
                             vst1q_f32(&O(i, k), temp);
                         }
 
                         float32x4_t o_vec = vld1q_f32(&O(i, k));
-
                         o_vec = vmlaq_f32(o_vec, a_vec, b_vec);
                         vst1q_f32(&O(i, k), o_vec);
                     }
 
-                    if (o_shape[1] % 4 != 0)
+                    if (N % 4 != 0)
                     {
-                        for (; k < o_shape[1]; ++k)
+                        for (; k < N; ++k)
                         {
                             if (j == 0)
                             {
@@ -71,17 +75,53 @@ void matMul2D_out(const TensorView &A, const TensorView &B, TensorView &O)
                         }
                     }
                 }
-                else
+            }
+        }
+        else if (!transposeA && transposeB && A.stride()[1] == 1 && B.stride()[1] == 1)
+        {
+            // Fast contiguous NEON dot-product path:
+            // O(i, k) = dot_product(row i of A, row k of B) over K elements
+            for (size_t i = startI; i < endI; ++i)
+            {
+                for (size_t k = 0; k < N; ++k)
                 {
-                    for (size_t k = 0; k < o_shape[1]; ++k)
+                    float sum = 0.0f;
+                    size_t j = 0;
+                    float32x4_t acc = vdupq_n_f32(0.0f);
+                    for (; j + 4 <= K; j += 4)
                     {
+                        float32x4_t a_vec = vld1q_f32(&A(i, j));
+                        float32x4_t b_vec = vld1q_f32(&B(k, j));
+                        acc = vmlaq_f32(acc, a_vec, b_vec);
+                    }
+                    sum = vaddvq_f32(acc);
+
+                    for (; j < K; ++j)
+                    {
+                        sum += A(i, j) * B(k, j);
+                    }
+                    O(i, k) = sum;
+                }
+            }
+        }
+        else
+        {
+            // General path (transposeA, or arbitrary non-contiguous strides)
+            for (size_t i = startI; i < endI; ++i)
+            {
+                for (size_t j = 0; j < K; ++j)
+                {
+                    float a_val = transposeA ? A(j, i) : A(i, j);
+                    for (size_t k = 0; k < N; ++k)
+                    {
+                        float b_val = transposeB ? B(k, j) : B(j, k);
                         if (j == 0)
                         {
-                            O(i, k) = A(i, j) * B(j, k);
+                            O(i, k) = a_val * b_val;
                         }
                         else
                         {
-                            O(i, k) += A(i, j) * B(j, k);
+                            O(i, k) += a_val * b_val;
                         }
                     }
                 }
@@ -302,16 +342,4 @@ void eleMul2D_out(const TensorView &X, float val, TensorView &O)
             O(i, j) = X(i, j) * val;
         }
     }
-}
-
-// This doesn't allocate memory but returns a new TensorView
-TensorView transpose2D(TensorView &X)
-{
-    auto x_shape = X.shape();
-    auto x_stride = X.stride();
-
-    std::reverse(x_shape.begin(), x_shape.end());
-    std::reverse(x_stride.begin(), x_stride.end());
-
-    return TensorView(X.get(), x_shape, x_stride, 0);
 }

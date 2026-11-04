@@ -10,12 +10,11 @@
 
 TensorView attentionScore(TensorView &Q, TensorView &K, ArenaAllocator &alloc)
 {
-    auto K_trans = transpose2D(K);
-
-    std::vector<size_t> output_shape{Q.shape()[0], K_trans.shape()[1]};
+    // Q is [N, 64], K is [cachePos + N, 64] -> Q * K^T produces [N, cachePos + N]
+    std::vector<size_t> output_shape{Q.shape()[0], K.shape()[0]};
     size_t bytesRequired = sizeof(float) * output_shape[0] * output_shape[1];
     TensorView out(alloc.alloc(bytesRequired), output_shape, 0);
-    matMul2D_out(Q, K_trans, out);
+    matMul2D_out(Q, K, out, /*transposeA=*/false, /*transposeB=*/true);
 
     // we should perform an element wise division with sqrt(colSize)
     // here colSize is 64 -> sqrt(64) = 8

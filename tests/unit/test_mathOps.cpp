@@ -4,6 +4,7 @@
 #include "tensorView.hpp"
 #include "arenaAllocator.hpp"
 #include "mathOps.hpp"
+#include "operator.hpp"
 
 #include <vector>
 #include <cmath>
@@ -112,12 +113,12 @@ TEST_CASE("matMul2D & matMul2D_out: Matrix Multiplication")
         }
     }
 
-    SUBCASE("Transposed B matrix (stride[1] != 1 non-contiguous branch)")
+    SUBCASE("transposeB = true (A * B^T)")
     {
-        // A is 2x3, B_orig is 4x3. B = transpose(B_orig) is 3x4 with stride[1] != 1.
+        // A is 2x3, B is 4x3 -> B^T is 3x4 -> C is 2x4
         float a_data[6] = {1.0f, 2.0f, 3.0f, 
                            4.0f, 5.0f, 6.0f};
-        float b_orig_data[12] = {
+        float b_data[12] = {
             1.0f, 2.0f, 3.0f,
             4.0f, 5.0f, 6.0f,
             7.0f, 8.0f, 9.0f,
@@ -125,23 +126,78 @@ TEST_CASE("matMul2D & matMul2D_out: Matrix Multiplication")
         };
 
         TensorView A(a_data, {2, 3}, 0);
-        TensorView B_orig(b_orig_data, {4, 3}, 0);
-        TensorView B = transpose2D(B_orig);
-
-        REQUIRE(B.shape()[0] == 3);
-        REQUIRE(B.shape()[1] == 4);
-        REQUIRE(B.stride()[1] != 1); // Triggers the non-contiguous branch
+        TensorView B(b_data, {4, 3}, 0);
 
         float c_data[8] = {0.0f};
         TensorView C(c_data, {2, 4}, 0);
-        matMul2D_out(A, B, C);
+        matMul2D_out(A, B, C, /*transposeA=*/false, /*transposeB=*/true);
 
-        // Compute expected A * B_transposed
         for (size_t i = 0; i < 2; ++i) {
             for (size_t j = 0; j < 4; ++j) {
                 float expected = 0.0f;
                 for (size_t k = 0; k < 3; ++k) {
-                    expected += A(i, k) * B(k, j);
+                    expected += A(i, k) * B(j, k);
+                }
+                CHECK(C(i, j) == doctest::Approx(expected).epsilon(1e-4f));
+            }
+        }
+    }
+
+    SUBCASE("transposeA = true (A^T * B)")
+    {
+        // A is 3x2 -> A^T is 2x3, B is 3x4 -> C is 2x4
+        float a_data[6] = {1.0f, 4.0f,
+                           2.0f, 5.0f,
+                           3.0f, 6.0f};
+        float b_data[12] = {
+            1.0f, 2.0f, 3.0f, 4.0f,
+            5.0f, 6.0f, 7.0f, 8.0f,
+            9.0f, 1.0f, 2.0f, 3.0f
+        };
+
+        TensorView A(a_data, {3, 2}, 0);
+        TensorView B(b_data, {3, 4}, 0);
+
+        float c_data[8] = {0.0f};
+        TensorView C(c_data, {2, 4}, 0);
+        matMul2D_out(A, B, C, /*transposeA=*/true, /*transposeB=*/false);
+
+        for (size_t i = 0; i < 2; ++i) {
+            for (size_t j = 0; j < 4; ++j) {
+                float expected = 0.0f;
+                for (size_t k = 0; k < 3; ++k) {
+                    expected += A(k, i) * B(k, j);
+                }
+                CHECK(C(i, j) == doctest::Approx(expected).epsilon(1e-4f));
+            }
+        }
+    }
+
+    SUBCASE("transposeA = true && transposeB = true (A^T * B^T)")
+    {
+        // A is 3x2 -> A^T is 2x3, B is 4x3 -> B^T is 3x4 -> C is 2x4
+        float a_data[6] = {1.0f, 4.0f,
+                           2.0f, 5.0f,
+                           3.0f, 6.0f};
+        float b_data[12] = {
+            1.0f, 2.0f, 3.0f,
+            4.0f, 5.0f, 6.0f,
+            7.0f, 8.0f, 9.0f,
+            1.0f, 1.0f, 1.0f
+        };
+
+        TensorView A(a_data, {3, 2}, 0);
+        TensorView B(b_data, {4, 3}, 0);
+
+        float c_data[8] = {0.0f};
+        TensorView C(c_data, {2, 4}, 0);
+        matMul2D_out(A, B, C, /*transposeA=*/true, /*transposeB=*/true);
+
+        for (size_t i = 0; i < 2; ++i) {
+            for (size_t j = 0; j < 4; ++j) {
+                float expected = 0.0f;
+                for (size_t k = 0; k < 3; ++k) {
+                    expected += A(k, i) * B(j, k);
                 }
                 CHECK(C(i, j) == doctest::Approx(expected).epsilon(1e-4f));
             }
@@ -254,32 +310,6 @@ TEST_CASE("add1DTo2D and add1DTo2D_inplace: Bias Broadcasting")
         CHECK(Target(1, 1) == doctest::Approx(25.0f));
         CHECK(Target(1, 2) == doctest::Approx(36.0f));
     }
-}
-
-// ============================================================================
-// transpose2D Tests
-// ============================================================================
-TEST_CASE("transpose2D: Zero-copy Transposition")
-{
-    float data[6] = {
-        1.0f, 2.0f, 3.0f,
-        4.0f, 5.0f, 6.0f
-    };
-    TensorView X(data, {2, 3}, 0);
-
-    TensorView XT = transpose2D(X);
-
-    CHECK(XT.shape()[0] == 3);
-    CHECK(XT.shape()[1] == 2);
-    CHECK(XT.get() == X.get()); // Verifies zero-copy underlying buffer
-
-    // Check transposed coordinates
-    CHECK(XT(0, 0) == doctest::Approx(1.0f));
-    CHECK(XT(0, 1) == doctest::Approx(4.0f));
-    CHECK(XT(1, 0) == doctest::Approx(2.0f));
-    CHECK(XT(1, 1) == doctest::Approx(5.0f));
-    CHECK(XT(2, 0) == doctest::Approx(3.0f));
-    CHECK(XT(2, 1) == doctest::Approx(6.0f));
 }
 
 // ============================================================================
@@ -510,5 +540,71 @@ TEST_CASE("layerNorm_out: Layer Normalization")
         CHECK(Y(0, 0) == doctest::Approx(2.5505f).epsilon(1e-3f));
         CHECK(Y(0, 1) == doctest::Approx(5.0f).epsilon(1e-3f));
         CHECK(Y(0, 2) == doctest::Approx(7.4495f).epsilon(1e-3f));
+    }
+}
+
+// ============================================================================
+// Operator Polymorphic Hierarchy Tests
+// ============================================================================
+TEST_CASE("Operator Polymorphic Hierarchy")
+{
+    SUBCASE("MatMulOp via base pointer")
+    {
+        float a_data[4] = {1.0f, 2.0f, 3.0f, 4.0f};
+        float b_data[4] = {1.0f, 0.0f, 0.0f, 1.0f};
+        float c_data[4] = {0.0f};
+
+        TensorView A(a_data, {2, 2}, 0);
+        TensorView B(b_data, {2, 2}, 0);
+        TensorView C(c_data, {2, 2}, 0);
+
+        std::unique_ptr<Operator> op = std::make_unique<MatMulOp>();
+        CHECK(op->type() == OpType::MatMul);
+        CHECK(op->name() == "MatMul");
+
+        op->execute({&A, &B}, C);
+        CHECK(C(0, 0) == doctest::Approx(1.0f));
+        CHECK(C(0, 1) == doctest::Approx(2.0f));
+        CHECK(C(1, 0) == doctest::Approx(3.0f));
+        CHECK(C(1, 1) == doctest::Approx(4.0f));
+    }
+
+    SUBCASE("MatMulOp with transposeB via base pointer")
+    {
+        // A is [1, 3], B is [2, 3] -> B^T is [3, 2] -> C is [1, 2]
+        float a_data[3] = {1.0f, 2.0f, 3.0f};
+        float b_data[6] = {1.0f, 1.0f, 1.0f,
+                           2.0f, 2.0f, 2.0f};
+        float c_data[2] = {0.0f};
+
+        TensorView A(a_data, {1, 3}, 0);
+        TensorView B(b_data, {2, 3}, 0);
+        TensorView C(c_data, {1, 2}, 0);
+
+        std::unique_ptr<Operator> op = std::make_unique<MatMulOp>(/*transposeA=*/false, /*transposeB=*/true);
+        CHECK(op->type() == OpType::MatMul);
+
+        op->execute({&A, &B}, C);
+        // C(0, 0) = 1*1 + 2*1 + 3*1 = 6.0
+        // C(0, 1) = 1*2 + 2*2 + 3*2 = 12.0
+        CHECK(C(0, 0) == doctest::Approx(6.0f));
+        CHECK(C(0, 1) == doctest::Approx(12.0f));
+    }
+
+    SUBCASE("GeluOp and EleMulOp via base pointer")
+    {
+        float x_data[2] = {0.0f, 2.0f};
+        float y_data[2] = {0.0f};
+
+        TensorView X(x_data, {1, 2}, 0);
+        TensorView Y(y_data, {1, 2}, 0);
+
+        std::unique_ptr<Operator> gelu = std::make_unique<GeluOp>();
+        gelu->execute({&X}, Y);
+        CHECK(std::abs(Y(0, 0)) < 1e-5f);
+
+        std::unique_ptr<Operator> scale = std::make_unique<EleMulOp>(0.5f);
+        scale->execute({&X}, Y);
+        CHECK(Y(0, 1) == doctest::Approx(1.0f));
     }
 }
