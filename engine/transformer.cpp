@@ -11,12 +11,16 @@
 TensorView attentionScore(TensorView &Q, TensorView &K, ArenaAllocator &alloc)
 {
     auto K_trans = transpose2D(K);
-    auto out = matMul2D(Q, K_trans, alloc);
+
+    std::vector<size_t> output_shape{Q.shape()[0], K_trans.shape()[1]};
+    size_t bytesRequired = sizeof(float) * output_shape[0] * output_shape[1];
+    TensorView out(alloc.alloc(bytesRequired), output_shape, 0);
+    matMul2D_out(Q, K_trans, out);
 
     // we should perform an element wise division with sqrt(colSize)
     // here colSize is 64 -> sqrt(64) = 8
     // Dividing with 8 is equal to multiplying with 0.125
-    eleMul2D_inplace(out, 0.125);
+    eleMul2D_out(out, 0.125f, out);
 
     return out;
 }
@@ -36,8 +40,13 @@ void causalMasking(TensorView &S, size_t cachePos)
 
 TensorView forwardAttention(TensorView &normX, TensorView &attnWeight, TensorView &attnBias, TensorView &attnProjWeight, TensorView &attnProjBias, ArenaAllocator &alloc, KVCache &cache, size_t layerIdx, size_t cachePos)
 {
-    auto qkv = matMul2D(normX, attnWeight, alloc);
-    add1DTo2D_inplace(qkv, attnBias);
+    std::vector<size_t> out_shape{normX.shape()[0], attnWeight.shape()[1]};
+    size_t bytesRequired = sizeof(float) * out_shape[0] * out_shape[1];
+    TensorView qkv(alloc.alloc(bytesRequired), out_shape, 0);
+    matMul2D_out(normX, attnWeight, qkv);
+
+    // in-place bias add
+    add1DTo2D_out(qkv, attnBias, qkv);
 
     auto qkv_shape = qkv.shape();
 
@@ -58,7 +67,7 @@ TensorView forwardAttention(TensorView &normX, TensorView &attnWeight, TensorVie
     // each head will then compute attention score
 
     // Output matrix
-    size_t bytesRequired = sizeof(float) * N * colSize;
+    bytesRequired = sizeof(float) * N * colSize;
     TensorView O(alloc.alloc(bytesRequired), {N, colSize}, 0);
 
     for (int i = 0; i < 12; ++i)
@@ -74,27 +83,47 @@ TensorView forwardAttention(TensorView &normX, TensorView &attnWeight, TensorVie
 
         causalMasking(out, cachePos);
 
-        softmax_inplace(out);
+        // in-place softmax
+        softmax_out(out, out);
+
         matMul2D_out(out, Vh, Oh);
     }
 
-    auto out = matMul2D(O, attnProjWeight, alloc);
-    add1DTo2D_inplace(out, attnProjBias);
+    out_shape[0] = O.shape()[0];
+    out_shape[1] = attnProjWeight.shape()[1];
+    bytesRequired = sizeof(float) * out_shape[0] * out_shape[1];
+    TensorView outAttended(alloc.alloc(bytesRequired), out_shape, 0);
 
-    return out;
+    matMul2D_out(O, attnProjWeight, outAttended);
+
+    // in-place projection bias add
+    add1DTo2D_out(outAttended, attnProjBias, outAttended);
+
+    return outAttended;
 }
 
 TensorView forwardMLP(TensorView &attn, TensorView &fcWeight, TensorView &fcBias, TensorView &projWeight, TensorView &projBias, ArenaAllocator &alloc)
 {
-    auto out = matMul2D(attn, fcWeight, alloc);
-    add1DTo2D_inplace(out, fcBias);
+    std::vector<size_t> fc_shape{attn.shape()[0], fcWeight.shape()[1]};
+    size_t fcBytes = sizeof(float) * fc_shape[0] * fc_shape[1];
+    TensorView out(alloc.alloc(fcBytes), fc_shape, 0);
+    matMul2D_out(attn, fcWeight, out);
 
-    gelu_inplace(out);
+    // in-place bias add
+    add1DTo2D_out(out, fcBias, out);
 
-    out = matMul2D(out, projWeight, alloc);
-    add1DTo2D_inplace(out, projBias);
+    // in-place GELU
+    gelu_out(out, out);
 
-    return out;
+    std::vector<size_t> proj_shape{out.shape()[0], projWeight.shape()[1]};
+    size_t projBytes = sizeof(float) * proj_shape[0] * proj_shape[1];
+    TensorView outProj(alloc.alloc(projBytes), proj_shape, 0);
+    matMul2D_out(out, projWeight, outProj);
+
+    // in-place projection bias add
+    add1DTo2D_out(outProj, projBias, outProj);
+
+    return outProj;
 }
 
 size_t extractNextTokenId(TensorView &X)
@@ -178,7 +207,7 @@ size_t sampleTokenIdx(TensorView &X, float temperature, size_t topK, float topP)
 
     // convert the logits to probabilities
     // TODO: Add verSplit to TensorView to avoid applying softmax to all rows during the prefill phase
-    softmax_inplace(X);
+    softmax_out(X, X);
 
     // apply top-k filtering
     auto topKVec = getTopKIndices(X, topK);

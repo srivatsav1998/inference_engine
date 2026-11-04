@@ -9,8 +9,10 @@
 
 //////////////// Accepts output Variants ////////////////
 
-void matMul2D_out(TensorView &A, TensorView &B, TensorView &O)
+void matMul2D_out(const TensorView &A, const TensorView &B, TensorView &O)
 {
+    assert(O.get() != A.get() && O.get() != B.get() && "matMul2D_out: output buffer cannot alias input buffers");
+
     auto o_shape = O.shape();
     auto a_shape = A.shape();
 
@@ -129,71 +131,68 @@ void matMul2D_out(TensorView &A, TensorView &B, TensorView &O)
 
 //////////////// General Variants ////////////////
 
-TensorView matMul2D(TensorView &A, TensorView &B, ArenaAllocator &alloc)
+void add2D_out(const TensorView &A, const TensorView &B, TensorView &O)
 {
     auto a_shape = A.shape();
     auto b_shape = B.shape();
-
-    // first ensure that matrix multiplication is possible
-    assert(a_shape[1] == b_shape[0] && "Incompatible shapes were provided");
-
-    std::vector<size_t> out_shape{a_shape[0], b_shape[1]};
-    size_t bytesRequired = sizeof(float) * (out_shape[0] * out_shape[1]);
-
-    TensorView result(alloc.alloc(bytesRequired), out_shape, 0);
-
-    matMul2D_out(A, B, result);
-
-    return result;
-}
-
-TensorView add2D(TensorView &A, TensorView &B, ArenaAllocator &alloc)
-{
-    auto a_shape = A.shape();
-    auto b_shape = B.shape();
+    auto o_shape = O.shape();
 
     // ensure that matrix addition is possible
     assert(a_shape[0] == b_shape[0] && a_shape[1] == b_shape[1] && "Provided matrices are not compatible for add operation");
+    assert(a_shape == o_shape && "add2D_out: output shape must match input shape");
 
-    size_t bytesRequired = sizeof(float) * (a_shape[0] * a_shape[1]);
-
-    TensorView result(alloc.alloc(bytesRequired), a_shape, 0);
+    if (A.get() == O.get())
+    {
+        assert(A.stride() == O.stride() && "In-place add2D_out requires identical strides between A and O");
+    }
+    if (B.get() == O.get())
+    {
+        assert(B.stride() == O.stride() && "In-place add2D_out requires identical strides between B and O");
+    }
 
     for (size_t i = 0; i < a_shape[0]; ++i)
     {
         for (size_t j = 0; j < a_shape[1]; ++j)
         {
-            result(i, j) = A(i, j) + B(i, j);
+            O(i, j) = A(i, j) + B(i, j);
         }
     }
-
-    return result;
 }
 
-TensorView add1DTo2D(TensorView &A, TensorView &b, ArenaAllocator &alloc)
+void add1DTo2D_out(const TensorView &A, const TensorView &b, TensorView &O)
 {
     // output shape will be same as A
     auto a_shape = A.shape();
     auto b_shape = b.shape();
+    auto o_shape = O.shape();
 
     assert(a_shape[1] == b_shape[1] && "The columns are not equal");
+    assert(a_shape == o_shape && "add1DTo2D_out: output shape must match input A shape");
 
-    size_t bytesRequired = sizeof(float) * a_shape[0] * a_shape[1];
-    TensorView result(alloc.alloc(bytesRequired), a_shape, 0);
+    if (A.get() == O.get())
+    {
+        assert(A.stride() == O.stride() && "In-place add1DTo2D_out requires identical strides between A and O");
+    }
 
     for (size_t i = 0; i < a_shape[0]; ++i)
     {
         for (size_t j = 0; j < a_shape[1]; ++j)
         {
-            result(i, j) = A(i, j) + b(0, j);
+            O(i, j) = A(i, j) + b(0, j);
         }
     }
-    return result;
 }
 
-TensorView gelu(TensorView &A, ArenaAllocator &alloc)
+void gelu_out(const TensorView &A, TensorView &O)
 {
     auto a_shape = A.shape();
+    auto o_shape = O.shape();
+
+    assert(a_shape == o_shape && "gelu_out: input and output shapes must match");
+    if (A.get() == O.get())
+    {
+        assert(A.stride() == O.stride() && "In-place gelu_out requires identical strides");
+    }
 
     const float prefix = sqrt(2 / std::numbers::pi_v<float>);
 
@@ -202,32 +201,26 @@ TensorView gelu(TensorView &A, ArenaAllocator &alloc)
         return 0.5 * x * (1.0 + tanh(prefix * (x + (0.044715 * x * x * x))));
     };
 
-    size_t bytesRequired = sizeof(float) * (a_shape[0] * a_shape[1]);
-
-    TensorView result(alloc.alloc(bytesRequired), a_shape, 0);
-
     for (size_t i = 0; i < a_shape[0]; ++i)
     {
         for (size_t j = 0; j < a_shape[1]; ++j)
         {
-            result(i, j) = gelu_op(A(i, j));
+            O(i, j) = gelu_op(A(i, j));
         }
     }
-
-    return result;
 }
 
-TensorView softmax(TensorView &A, ArenaAllocator &alloc)
+void softmax_out(const TensorView &A, TensorView &O)
 {
-
     // for softmax - the input can be a matrix
     auto a_shape = A.shape();
+    auto o_shape = O.shape();
 
-    // output will be a row vector
-    size_t bytesRequired = sizeof(float) * a_shape[0] * a_shape[1];
-
-    // output tensor
-    TensorView result(alloc.alloc(bytesRequired), a_shape, 0);
+    assert(a_shape == o_shape && "softmax_out: input and output shapes must match");
+    if (A.get() == O.get())
+    {
+        assert(A.stride() == O.stride() && "In-place softmax_out requires identical strides");
+    }
 
     for (size_t i = 0; i < a_shape[0]; ++i)
     {
@@ -241,27 +234,27 @@ TensorView softmax(TensorView &A, ArenaAllocator &alloc)
         float totalSum = 0;
         for (size_t j = 0; j < a_shape[1]; ++j)
         {
-            result(i, j) = std::exp(A(i, j) - maxVal);
-            totalSum += result(i, j);
+            O(i, j) = std::exp(A(i, j) - maxVal);
+            totalSum += O(i, j);
         }
 
         for (size_t j = 0; j < a_shape[1]; ++j)
         {
-            result(i, j) /= totalSum;
+            O(i, j) /= totalSum;
         }
     }
-
-    return result;
 }
 
-TensorView layerNorm(TensorView &X, TensorView &weight, TensorView &bias, ArenaAllocator &alloc)
+void layerNorm_out(const TensorView &X, const TensorView &weight, const TensorView &bias, TensorView &O)
 {
     auto out_shape = X.shape();
+    auto o_shape = O.shape();
 
-    size_t bytesRequired = sizeof(float) * out_shape[0] * out_shape[1];
-
-    // prepare the output.
-    TensorView result(alloc.alloc(bytesRequired), out_shape, 0);
+    assert(out_shape == o_shape && "layerNorm_out: output shape must match input X shape");
+    if (X.get() == O.get())
+    {
+        assert(X.stride() == O.stride() && "In-place layerNorm_out requires identical strides");
+    }
 
     for (size_t i = 0; i < out_shape[0]; ++i)
     {
@@ -286,10 +279,29 @@ TensorView layerNorm(TensorView &X, TensorView &weight, TensorView &bias, ArenaA
         for (size_t j = 0; j < out_shape[1]; ++j)
         {
             auto normalizedVal = (X(i, j) - rowMean) / sqrt(rowVariance + 0.00001);
-            result(i, j) = weight(0, j) * normalizedVal + bias(0, j);
+            O(i, j) = weight(0, j) * normalizedVal + bias(0, j);
         }
     }
-    return result;
+}
+
+void eleMul2D_out(const TensorView &X, float val, TensorView &O)
+{
+    auto x_shape = X.shape();
+    auto o_shape = O.shape();
+
+    assert(x_shape == o_shape && "eleMul2D_out: input and output shapes must match");
+    if (X.get() == O.get())
+    {
+        assert(X.stride() == O.stride() && "In-place eleMul2D_out requires identical strides");
+    }
+
+    for (size_t i = 0; i < x_shape[0]; ++i)
+    {
+        for (size_t j = 0; j < x_shape[1]; ++j)
+        {
+            O(i, j) = X(i, j) * val;
+        }
+    }
 }
 
 // This doesn't allocate memory but returns a new TensorView
@@ -302,99 +314,4 @@ TensorView transpose2D(TensorView &X)
     std::reverse(x_stride.begin(), x_stride.end());
 
     return TensorView(X.get(), x_shape, x_stride, 0);
-}
-
-//////////////// Inplace Variants ////////////////
-
-void add2D_inplace(TensorView &A, TensorView &B)
-{
-    auto a_shape = A.shape();
-    auto b_shape = B.shape();
-
-    // ensure that matrix addition is possible
-    assert(a_shape[0] == b_shape[0] && a_shape[1] == b_shape[1] && "Provided matrices are not compatible for add operation");
-    for (size_t i = 0; i < a_shape[0]; ++i)
-    {
-        for (size_t j = 0; j < a_shape[1]; ++j)
-        {
-            A(i, j) += B(i, j);
-        }
-    }
-}
-
-void add1DTo2D_inplace(TensorView &A, TensorView &b)
-{
-    auto a_shape = A.shape();
-    auto b_shape = b.shape();
-
-    assert(a_shape[1] == b_shape[1] && "The columns are not equal");
-
-    for (size_t i = 0; i < a_shape[0]; ++i)
-    {
-        for (size_t j = 0; j < a_shape[1]; ++j)
-        {
-            A(i, j) += b(0, j);
-        }
-    }
-}
-
-void gelu_inplace(TensorView &A)
-{
-    auto a_shape = A.shape();
-
-    const float prefix = sqrt(2 / std::numbers::pi_v<float>);
-
-    auto gelu_op = [&prefix](float x)
-    {
-        return 0.5 * x * (1.0 + tanh(prefix * (x + (0.044715 * x * x * x))));
-    };
-
-    for (size_t i = 0; i < a_shape[0]; ++i)
-    {
-        for (size_t j = 0; j < a_shape[1]; ++j)
-        {
-            A(i, j) = gelu_op(A(i, j));
-        }
-    }
-}
-
-void softmax_inplace(TensorView &A)
-{
-    // for softmax - the input can be a matrix
-    auto a_shape = A.shape();
-
-    for (size_t i = 0; i < a_shape[0]; ++i)
-    {
-        // Apply softmax logic for every row
-        float maxVal = A(i, 0);
-        for (size_t j = 0; j < a_shape[1]; ++j)
-        {
-            maxVal = std::max(maxVal, A(i, j));
-        }
-
-        float totalSum = 0;
-        for (size_t j = 0; j < a_shape[1]; ++j)
-        {
-            A(i, j) = std::exp(A(i, j) - maxVal);
-            totalSum += A(i, j);
-        }
-
-        for (size_t j = 0; j < a_shape[1]; ++j)
-        {
-            A(i, j) /= totalSum;
-        }
-    }
-}
-
-void eleMul2D_inplace(TensorView &X, float val)
-{
-    auto x_shape = X.shape();
-    for (size_t i = 0; i < x_shape[0]; ++i)
-    {
-        for (size_t j = 0; j < x_shape[1]; ++j)
-        {
-            X(i, j) *= val;
-        }
-    }
-    return;
 }

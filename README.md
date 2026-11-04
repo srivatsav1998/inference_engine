@@ -80,6 +80,8 @@ make weights
 ---
 
 ## Benchmarks
+
+### Execution Latency
 | Engine Version | Optimization Level | CPU Threads | Hardware | Tokens | Time (s) |
 | --- | --- | --- | --- | --- | --- |
 | v0.1 (Naive C++) | `-O3` | 1 | Apple Silicon M2 | 4 | ~4.37s |
@@ -87,6 +89,20 @@ make weights
 | v0.3 (NEON SIMD) | `-O3` | 8 | Apple Silicon M2 | 4 | ~0.94s |
 | v1.0 (Autoregressive Loop) | `-O3` | 8 | Apple Silicon M2 | 4 + 5 generated | ~7.52s |
 | v1.1 (KV-Cache) | `-O3` | 8 | Apple Silicon M2 | 4 + 8 generated | ~6.37s |
+
+### Peak Activation Memory Footprint (Arena Allocator)
+Evaluating peak activation bytes per generation step (GPT-2 124M, prompt length $N = 3$, generating deterministic greedy tokens):
+
+| Execution Phase | Baseline (v1.1 Prototype) | Naive Destination-Passing (Separate Buffers) | In-Place Contracted (Phase 2 Refactor) | Net Savings vs. Baseline |
+| :--- | :--- | :--- | :--- | :--- |
+| **Prefill Phase** ($N = 3$) | 1,943,536 B (~1.94 MB) | 3,517,648 B (~3.52 MB) | **1,734,352 B (~1.73 MB)** | **-10.8%** (-209 KB) |
+| **Decoding Step 1** ($N = 1$, pos 3) | 651,856 B (~651.9 KB) | 1,172,560 B (~1.17 MB) | **578,128 B (~0.58 MB)** | **-11.3%** (-73.7 KB) |
+| **Decoding Step 2** ($N = 1$, pos 4) | 654,160 B (~654.2 KB) | 1,179,472 B (~1.18 MB) | **580,432 B (~0.58 MB)** | **-11.3%** (-73.7 KB) |
+
+**Key Takeaways**:
+- **Zero Kernel Allocations**: Operators no longer own or invoke memory allocators.
+- **Contractual In-Place Aliasing**: `softmax_out`, `gelu_out`, `eleMul2D_out`, and `add2D_out` support in-place mutation backed by defensive non-aliasing/stride assertions.
+- **Buffer Recycling**: Reusing `normX` across all layers and collapsing residual additions in-place reduces peak decoding activation footprint by over 50% vs. naive destination-passing and cuts ~228 arena allocations per generated token.
 
 
 ---

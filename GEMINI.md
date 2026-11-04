@@ -27,14 +27,15 @@ This project is a custom, zero-dependency C++ inference engine for a 124M parame
 - **Tests**: Unified under `tests/unit/` (C++ micro-kernels) and `tests/e2e/` (greedy decoding regression).
 
 # Current Step
-**Phase 2: Repository Hardening & Testing Infrastructure (Pre-Refactor)**
+**Phase 2: The DAG Execution Runtime Refactor**
 
-**Context**: Robust automated testing and fast CI/CD pipeline established before embarking on the DAG Execution Runtime refactor.
-*   **Completed**: Cleaned repo structure, portable `Makefile`, single-header `doctest.h` test suite (2,157 assertions).
+**Context**: Refactoring core engine and operator abstractions toward extensible DAG execution.
+*   **Completed**: Cleaned repo structure, portable `Makefile`, single-header `doctest.h` test suite (2,164 assertions).
 *   **Completed**: Fast deterministic synthetic E2E regression test for CI (<1s runtime, zero network downloads).
 *   **Completed**: Retained full real GPT-2 greedy decoding regression test for local runs (`make test_full`).
-*   **Completed**: GitHub Actions workflow running on macOS ARM64.
-*   **Immediate Next Task**: Begin designing the DAG Execution Runtime (Frontend IR -> Graph Node & Topology -> Execution Scheduler).
+*   **Completed**: Migrated `mathOps` to zero-allocation destination-passing style (`_out`), establishing strict in-place contracts and memory safety assertions.
+*   **Completed**: Eliminated ~228 redundant intermediate allocations per generated token, reducing peak activation footprint by ~50.7% vs. naive destination-passing and ~11.3% vs. baseline.
+*   **Immediate Next Task**: Module Decoupling (organize `core/`, `ops/`, `graph/`) & dynamic architecture parameterization.
 
 # Roadmap / Future Enhancements
 *   **Direct C++ Safetensors Loader**: Implement native `.safetensors` zero-copy ingestion via `mmap` + `nlohmann-json` to bypass Python conversion scripts.

@@ -63,30 +63,39 @@ void Engine::infer(std::vector<size_t> &prompt, unsigned int *response, unsigned
             X = embedTokens({prompt[token]}, model_.wpe_weight, model_.wte_weight, token, arena_);
         }
 
+        size_t bytesRequired = sizeof(float) * X.shape()[0] * X.shape()[1];
+        TensorView normX(arena_.alloc(bytesRequired), X.shape(), 0);
+
         // attention part
         for (size_t layerIdx = 0; layerIdx < model_.layers.size(); ++layerIdx)
         {
             auto layer = model_.layers[layerIdx];
 
-            auto normX = layerNorm(X, layer.ln_1_weight, layer.ln_1_bias, arena_);
+            layerNorm_out(X, layer.ln_1_weight, layer.ln_1_bias, normX);
+
             auto attn_out = forwardAttention(normX, layer.attn_c_attn_weight, layer.attn_c_attn_bias, layer.attn_c_proj_weight, layer.attn_c_proj_bias, arena_, cache, layerIdx, cachePos);
 
-            // residual connection
-            add2D_inplace(X, attn_out);
+            // in-place residual connection
+            add2D_out(X, attn_out, X);
 
-            normX = layerNorm(X, layer.ln_2_weight, layer.ln_2_bias, arena_);
+            layerNorm_out(X, layer.ln_2_weight, layer.ln_2_bias, normX);
             auto mlp_out = forwardMLP(normX, layer.mlp_c_fc_weight, layer.mlp_c_fc_bias, layer.mlp_c_proj_weight, layer.mlp_c_proj_bias, arena_);
 
-            // residual connection
-            add2D_inplace(X, mlp_out);
+            // in-place residual connection
+            add2D_out(X, mlp_out, X);
         }
 
-        // final layerNormalization
-        auto out = layerNorm(X, model_.ln_f_weight, model_.ln_f_bias, arena_);
+        // final layerNormalization (reusing normX buffer)
+        layerNorm_out(X, model_.ln_f_weight, model_.ln_f_bias, normX);
 
         // un-embedding projection
         auto wte_trans = transpose2D(model_.wte_weight);
-        out = matMul2D(out, wte_trans, arena_);
+
+        std::vector<size_t> out_shape{normX.shape()[0], wte_trans.shape()[1]};
+        bytesRequired = sizeof(float) * (out_shape[0] * out_shape[1]);
+
+        TensorView result(arena_.alloc(bytesRequired), out_shape, 0);
+        matMul2D_out(normX, wte_trans, result);
 
         // extracting next word
         size_t tokenId;
@@ -94,11 +103,11 @@ void Engine::infer(std::vector<size_t> &prompt, unsigned int *response, unsigned
         float diff = std::abs(temperature - 0.0f);
         if (diff < 1e-6f)
         {
-            tokenId = extractNextTokenId(out);
+            tokenId = extractNextTokenId(result);
         }
         else
         {
-            tokenId = sampleTokenIdx(out, temperature, topK, topP);
+            tokenId = sampleTokenIdx(result, temperature, topK, topP);
         }
 
         response[respIdx++] = tokenId;

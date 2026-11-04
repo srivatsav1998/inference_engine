@@ -27,10 +27,9 @@ TEST_CASE("matMul2D & matMul2D_out: Matrix Multiplication")
         TensorView A(a_data, {2, 3}, 0);
         TensorView B(b_data, {3, 2}, 0);
 
-        TensorView C = matMul2D(A, B, arena);
-
-        CHECK(C.shape()[0] == 2);
-        CHECK(C.shape()[1] == 2);
+        float c_data[4] = {0.0f};
+        TensorView C(c_data, {2, 2}, 0);
+        matMul2D_out(A, B, C);
         CHECK(C(0, 0) == doctest::Approx(29.0f).epsilon(1e-4f));
         CHECK(C(0, 1) == doctest::Approx(20.0f).epsilon(1e-4f));
         CHECK(C(1, 0) == doctest::Approx(20.0f).epsilon(1e-4f));
@@ -61,10 +60,9 @@ TEST_CASE("matMul2D & matMul2D_out: Matrix Multiplication")
         TensorView A(a_data, {1, 4}, 0);
         TensorView B(b_data, {4, 4}, 0);
 
-        TensorView C = matMul2D(A, B, arena);
-
-        CHECK(C.shape()[0] == 1);
-        CHECK(C.shape()[1] == 4);
+        float c_data[4] = {0.0f};
+        TensorView C(c_data, {1, 4}, 0);
+        matMul2D_out(A, B, C);
 
         // Expected dot products:
         // C(0, 0) = 1*1 + 2*0 + 3*1 + 4*0 = 4
@@ -103,10 +101,9 @@ TEST_CASE("matMul2D & matMul2D_out: Matrix Multiplication")
         TensorView A(a_data.data(), {M, K}, 0);
         TensorView B(b_data.data(), {K, N}, 0);
 
-        TensorView C = matMul2D(A, B, arena);
-
-        CHECK(C.shape()[0] == M);
-        CHECK(C.shape()[1] == N);
+        std::vector<float> c_data(M * N, 0.0f);
+        TensorView C(c_data.data(), {M, N}, 0);
+        matMul2D_out(A, B, C);
 
         for (size_t i = 0; i < M; ++i) {
             for (size_t j = 0; j < N; ++j) {
@@ -135,10 +132,9 @@ TEST_CASE("matMul2D & matMul2D_out: Matrix Multiplication")
         REQUIRE(B.shape()[1] == 4);
         REQUIRE(B.stride()[1] != 1); // Triggers the non-contiguous branch
 
-        TensorView C = matMul2D(A, B, arena);
-
-        CHECK(C.shape()[0] == 2);
-        CHECK(C.shape()[1] == 4);
+        float c_data[8] = {0.0f};
+        TensorView C(c_data, {2, 4}, 0);
+        matMul2D_out(A, B, C);
 
         // Compute expected A * B_transposed
         for (size_t i = 0; i < 2; ++i) {
@@ -161,7 +157,9 @@ TEST_CASE("matMul2D & matMul2D_out: Matrix Multiplication")
         TensorView A(a_data.data(), {M, K}, 0);
         TensorView B(b_data.data(), {K, N}, 0);
 
-        TensorView C = matMul2D(A, B, arena);
+        std::vector<float> c_data(M * N, 0.0f);
+        TensorView C(c_data.data(), {M, N}, 0);
+        matMul2D_out(A, B, C);
 
         // Dot product of row of 1.5s and col of 2.0s over K elements:
         // K * 1.5 * 2.0 = K * 3.0 = 384.0f
@@ -187,21 +185,23 @@ TEST_CASE("add2D and add2D_inplace: Element-wise addition")
     TensorView A(a_data, {2, 2}, 0);
     TensorView B(b_data, {2, 2}, 0);
 
-    SUBCASE("add2D (out-of-place)")
+    SUBCASE("add2D_out (out-of-place)")
     {
-        TensorView C = add2D(A, B, arena);
+        float c_data[4] = {0.0f};
+        TensorView C(c_data, {2, 2}, 0);
+        add2D_out(A, B, C);
         CHECK(C(0, 0) == doctest::Approx(11.0f));
         CHECK(C(0, 1) == doctest::Approx(22.0f));
         CHECK(C(1, 0) == doctest::Approx(33.0f));
         CHECK(C(1, 1) == doctest::Approx(44.0f));
     }
 
-    SUBCASE("add2D_inplace (residual connection)")
+    SUBCASE("add2D_out (in-place / residual connection)")
     {
         float target_data[4] = {1.0f, 2.0f, 3.0f, 4.0f};
         TensorView Target(target_data, {2, 2}, 0);
 
-        add2D_inplace(Target, B);
+        add2D_out(Target, B, Target);
         CHECK(Target(0, 0) == doctest::Approx(11.0f));
         CHECK(Target(0, 1) == doctest::Approx(22.0f));
         CHECK(Target(1, 0) == doctest::Approx(33.0f));
@@ -225,9 +225,11 @@ TEST_CASE("add1DTo2D and add1DTo2D_inplace: Bias Broadcasting")
     TensorView A(a_data, {2, 3}, 0);
     TensorView Bias(bias_data, {1, 3}, 0);
 
-    SUBCASE("add1DTo2D (out-of-place)")
+    SUBCASE("add1DTo2D_out (out-of-place)")
     {
-        TensorView C = add1DTo2D(A, Bias, arena);
+        float c_data[6] = {0.0f};
+        TensorView C(c_data, {2, 3}, 0);
+        add1DTo2D_out(A, Bias, C);
         CHECK(C(0, 0) == doctest::Approx(11.0f));
         CHECK(C(0, 1) == doctest::Approx(22.0f));
         CHECK(C(0, 2) == doctest::Approx(33.0f));
@@ -236,7 +238,7 @@ TEST_CASE("add1DTo2D and add1DTo2D_inplace: Bias Broadcasting")
         CHECK(C(1, 2) == doctest::Approx(36.0f));
     }
 
-    SUBCASE("add1DTo2D_inplace")
+    SUBCASE("add1DTo2D_out (in-place)")
     {
         float target_data[6] = {
             1.0f, 2.0f, 3.0f,
@@ -244,7 +246,7 @@ TEST_CASE("add1DTo2D and add1DTo2D_inplace: Bias Broadcasting")
         };
         TensorView Target(target_data, {2, 3}, 0);
 
-        add1DTo2D_inplace(Target, Bias);
+        add1DTo2D_out(Target, Bias, Target);
         CHECK(Target(0, 0) == doctest::Approx(11.0f));
         CHECK(Target(0, 1) == doctest::Approx(22.0f));
         CHECK(Target(0, 2) == doctest::Approx(33.0f));
@@ -281,34 +283,52 @@ TEST_CASE("transpose2D: Zero-copy Transposition")
 }
 
 // ============================================================================
-// eleMul2D_inplace Tests
+// eleMul2D_out Tests
 // ============================================================================
-TEST_CASE("eleMul2D_inplace: Scalar Scaling")
+TEST_CASE("eleMul2D_out: Scalar Scaling")
 {
-    float data[4] = {2.0f, 4.0f, 6.0f, 8.0f};
-    TensorView X(data, {2, 2}, 0);
+    SUBCASE("eleMul2D_out in-place")
+    {
+        float data[4] = {2.0f, 4.0f, 6.0f, 8.0f};
+        TensorView X(data, {2, 2}, 0);
 
-    eleMul2D_inplace(X, 0.5f);
+        eleMul2D_out(X, 0.5f, X);
 
-    CHECK(X(0, 0) == doctest::Approx(1.0f));
-    CHECK(X(0, 1) == doctest::Approx(2.0f));
-    CHECK(X(1, 0) == doctest::Approx(3.0f));
-    CHECK(X(1, 1) == doctest::Approx(4.0f));
+        CHECK(X(0, 0) == doctest::Approx(1.0f));
+        CHECK(X(0, 1) == doctest::Approx(2.0f));
+        CHECK(X(1, 0) == doctest::Approx(3.0f));
+        CHECK(X(1, 1) == doctest::Approx(4.0f));
+    }
+
+    SUBCASE("eleMul2D_out out-of-place")
+    {
+        float data[4] = {2.0f, 4.0f, 6.0f, 8.0f};
+        float out_data[4] = {0.0f};
+        TensorView X(data, {2, 2}, 0);
+        TensorView O(out_data, {2, 2}, 0);
+
+        eleMul2D_out(X, 2.0f, O);
+
+        CHECK(O(0, 0) == doctest::Approx(4.0f));
+        CHECK(O(0, 1) == doctest::Approx(8.0f));
+        CHECK(O(1, 0) == doctest::Approx(12.0f));
+        CHECK(O(1, 1) == doctest::Approx(16.0f));
+    }
 }
 
 // ============================================================================
-// gelu & gelu_inplace Tests
+// gelu_out Tests
 // ============================================================================
-TEST_CASE("gelu & gelu_inplace: Activation Function")
+TEST_CASE("gelu_out: Activation Function")
 {
-    ArenaAllocator arena(1024 * 1024);
-
     float data[5] = {-4.0f, -1.0f, 0.0f, 1.0f, 4.0f};
     TensorView A(data, {1, 5}, 0);
 
-    SUBCASE("gelu out-of-place")
+    SUBCASE("gelu_out out-of-place")
     {
-        TensorView C = gelu(A, arena);
+        float c_data[5] = {0.0f};
+        TensorView C(c_data, {1, 5}, 0);
+        gelu_out(A, C);
 
         // GELU(-4) ~ 0
         CHECK(std::abs(C(0, 0)) < 1e-3f);
@@ -322,12 +342,12 @@ TEST_CASE("gelu & gelu_inplace: Activation Function")
         CHECK(C(0, 4) == doctest::Approx(4.0f).epsilon(1e-2f));
     }
 
-    SUBCASE("gelu_inplace")
+    SUBCASE("gelu_out in-place (1D)")
     {
         float target_data[5] = {-4.0f, -1.0f, 0.0f, 1.0f, 4.0f};
         TensorView Target(target_data, {1, 5}, 0);
 
-        gelu_inplace(Target);
+        gelu_out(Target, Target);
 
         CHECK(std::abs(Target(0, 0)) < 1e-3f);
         CHECK(Target(0, 1) == doctest::Approx(-0.1587f).epsilon(1e-2f));
@@ -335,15 +355,30 @@ TEST_CASE("gelu & gelu_inplace: Activation Function")
         CHECK(Target(0, 3) == doctest::Approx(0.8413f).epsilon(1e-2f));
         CHECK(Target(0, 4) == doctest::Approx(4.0f).epsilon(1e-2f));
     }
+
+    SUBCASE("gelu_out in-place (multi-row 2D)")
+    {
+        float target_data[6] = {
+            -4.0f, 0.0f, 4.0f,
+            -1.0f, 1.0f, 2.0f
+        };
+        TensorView Target(target_data, {2, 3}, 0);
+
+        gelu_out(Target, Target);
+
+        CHECK(std::abs(Target(0, 0)) < 1e-3f);
+        CHECK(std::abs(Target(0, 1)) < 1e-5f);
+        CHECK(Target(0, 2) == doctest::Approx(4.0f).epsilon(1e-2f));
+        CHECK(Target(1, 0) == doctest::Approx(-0.1587f).epsilon(1e-2f));
+        CHECK(Target(1, 1) == doctest::Approx(0.8413f).epsilon(1e-2f));
+    }
 }
 
 // ============================================================================
-// softmax & softmax_inplace Tests
+// softmax_out Tests
 // ============================================================================
-TEST_CASE("softmax & softmax_inplace: Exponentials Normalization")
+TEST_CASE("softmax_out: Exponentials Normalization")
 {
-    ArenaAllocator arena(1024 * 1024);
-
     SUBCASE("Basic probability distribution and sum to 1.0")
     {
         float data[6] = {
@@ -352,7 +387,9 @@ TEST_CASE("softmax & softmax_inplace: Exponentials Normalization")
         };
         TensorView A(data, {2, 3}, 0);
 
-        TensorView S = softmax(A, arena);
+        float s_data[6] = {0.0f};
+        TensorView S(s_data, {2, 3}, 0);
+        softmax_out(A, S);
 
         // Check each row sums to 1.0
         for (size_t i = 0; i < 2; ++i) {
@@ -370,7 +407,9 @@ TEST_CASE("softmax & softmax_inplace: Exponentials Normalization")
         float data[3] = {1000.0f, 1001.0f, 1002.0f};
         TensorView A(data, {1, 3}, 0);
 
-        TensorView S = softmax(A, arena);
+        float s_data[3] = {0.0f};
+        TensorView S(s_data, {1, 3}, 0);
+        softmax_out(A, S);
 
         CHECK(!std::isnan(S(0, 0)));
         CHECK(!std::isnan(S(0, 1)));
@@ -384,27 +423,43 @@ TEST_CASE("softmax & softmax_inplace: Exponentials Normalization")
         CHECK(S(0, 2) == doctest::Approx(expected_last).epsilon(1e-4f));
     }
 
-    SUBCASE("softmax_inplace")
+    SUBCASE("softmax_out in-place (1D)")
     {
         float data[3] = {1.0f, 2.0f, 3.0f};
         TensorView Target(data, {1, 3}, 0);
 
-        softmax_inplace(Target);
+        softmax_out(Target, Target);
 
         float sum = Target(0, 0) + Target(0, 1) + Target(0, 2);
         CHECK(sum == doctest::Approx(1.0f).epsilon(1e-5f));
         CHECK(Target(0, 0) < Target(0, 1));
         CHECK(Target(0, 1) < Target(0, 2));
     }
+
+    SUBCASE("softmax_out in-place (multi-row 2D invariant)")
+    {
+        float data[6] = {
+            1.0f, 2.0f, 3.0f,
+            10.0f, 20.0f, 30.0f
+        };
+        TensorView Target(data, {2, 3}, 0);
+
+        softmax_out(Target, Target);
+
+        for (size_t i = 0; i < 2; ++i) {
+            float sum = Target(i, 0) + Target(i, 1) + Target(i, 2);
+            CHECK(sum == doctest::Approx(1.0f).epsilon(1e-5f));
+            CHECK(Target(i, 0) < Target(i, 1));
+            CHECK(Target(i, 1) < Target(i, 2));
+        }
+    }
 }
 
 // ============================================================================
-// layerNorm Tests
+// layerNorm_out Tests
 // ============================================================================
-TEST_CASE("layerNorm: Layer Normalization")
+TEST_CASE("layerNorm_out: Layer Normalization")
 {
-    ArenaAllocator arena(1024 * 1024);
-
     SUBCASE("Zero mean and unit variance with identity affine parameters")
     {
         float x_data[6] = {
@@ -418,7 +473,9 @@ TEST_CASE("layerNorm: Layer Normalization")
         TensorView W(w_data, {1, 3}, 0);
         TensorView B(b_data, {1, 3}, 0);
 
-        TensorView Y = layerNorm(X, W, B, arena);
+        float y_data[6] = {0.0f};
+        TensorView Y(y_data, {2, 3}, 0);
+        layerNorm_out(X, W, B, Y);
 
         for (size_t i = 0; i < 2; ++i) {
             float mean = (Y(i, 0) + Y(i, 1) + Y(i, 2)) / 3.0f;
@@ -442,7 +499,9 @@ TEST_CASE("layerNorm: Layer Normalization")
         TensorView W(w_data, {1, 3}, 0);
         TensorView B(b_data, {1, 3}, 0);
 
-        TensorView Y = layerNorm(X, W, B, arena);
+        float y_data[3] = {0.0f};
+        TensorView Y(y_data, {1, 3}, 0);
+        layerNorm_out(X, W, B, Y);
 
         // For {1, 2, 3}: mean = 2, var = 2/3 ~ 0.66667, std ~ 0.816497
         // norm(0) = (1 - 2) / 0.8165 = -1.2247 -> Y(0) = 2 * (-1.2247) + 5 = 2.5505

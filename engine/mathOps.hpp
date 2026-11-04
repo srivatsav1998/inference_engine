@@ -6,33 +6,33 @@ class ArenaAllocator;
 
 //////////////// Accepts output Variants ////////////////
 
-void matMul2D_out(TensorView &A, TensorView &B, TensorView &O);
+// Matrix Multiplication: O = A * B.
+// CONTRACT: Output buffer O MUST NOT alias input buffers A or B.
+void matMul2D_out(const TensorView &A, const TensorView &B, TensorView &O);
 
-//////////////// General Variants ////////////////
+// Element-wise Matrix Addition: O = A + B.
+// CONTRACT: Supports in-place aliasing (O.get() == A.get() or O.get() == B.get()) with identical strides.
+void add2D_out(const TensorView &A, const TensorView &B, TensorView &O);
 
-TensorView matMul2D(TensorView &A, TensorView &B, ArenaAllocator &alloc);
+// 1D Row Vector Broadcasting Addition: O = A + b (b has shape [1, cols]).
+// CONTRACT: Supports in-place aliasing (O.get() == A.get()) with identical strides.
+void add1DTo2D_out(const TensorView &A, const TensorView &b, TensorView &O);
 
-TensorView add2D(TensorView &A, TensorView &B, ArenaAllocator &alloc);
+// GELU Activation: O = GELU(A).
+// CONTRACT: Pointwise operation. Supports in-place aliasing (O.get() == A.get()) with identical strides.
+void gelu_out(const TensorView &A, TensorView &O);
 
-TensorView add1DTo2D(TensorView &A, TensorView &b, ArenaAllocator &alloc);
+// Row-wise Softmax: O = Softmax(A).
+// CONTRACT: Supports in-place aliasing (O.get() == A.get()) with identical strides.
+void softmax_out(const TensorView &A, TensorView &O);
 
-TensorView gelu(TensorView &A, ArenaAllocator &alloc);
+// Layer Normalization: O = LayerNorm(X, weight, bias).
+// CONTRACT: Supports in-place aliasing (O.get() == X.get()) with identical strides.
+void layerNorm_out(const TensorView &X, const TensorView &weight, const TensorView &bias, TensorView &O);
 
-TensorView softmax(TensorView &A, ArenaAllocator &alloc);
-
-TensorView layerNorm(TensorView &X, TensorView &weight, TensorView &bias, ArenaAllocator &alloc);
+// Scalar Multiplication: O = X * val.
+// CONTRACT: Pointwise operation. Supports in-place aliasing (O.get() == X.get()) with identical strides.
+void eleMul2D_out(const TensorView &X, float val, TensorView &O);
 
 // This doesn't allocate memory but returns a new TensorView
 TensorView transpose2D(TensorView &X);
-
-//////////////// Inplace Variants ////////////////
-
-void add2D_inplace(TensorView &A, TensorView &B);
-
-void add1DTo2D_inplace(TensorView &A, TensorView &b);
-
-void gelu_inplace(TensorView &A);
-
-void softmax_inplace(TensorView &A);
-
-void eleMul2D_inplace(TensorView &X, float val);
