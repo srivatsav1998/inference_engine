@@ -17,5 +17,7 @@ public:
 
     void reset();
 
+    [[nodiscard]] size_t bytesAllocated() const;
+
     ~ArenaAllocator();
 };

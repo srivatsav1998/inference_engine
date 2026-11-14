@@ -18,7 +18,7 @@ public:
     TensorView(float *data, std::vector<size_t> shape, std::vector<size_t> stride, size_t byteOffSet);
 
     template <typename... Args>
-    [[nodiscard]] float &operator()(Args... indices)
+    [[nodiscard]] float &operator()(Args... indices) const
     {
         static_assert(sizeof...(indices) > 0, "Must provide atleast one index");
         assert(sizeof...(indices) == shape_.size() && "Number of indices should match the tensor dimensions!");
@@ -39,7 +39,7 @@ public:
 
     [[nodiscard]] const std::vector<size_t> &shape(void) const;
 
-    [[nodiscard]] float *get();
+    [[nodiscard]] float *get() const;
 
     [[nodiscard]] const std::vector<size_t> &stride(void) const;
 

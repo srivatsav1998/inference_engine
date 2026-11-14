@@ -32,7 +32,7 @@ const std::vector<size_t> &TensorView::shape(void) const
     return shape_;
 }
 
-float *TensorView::get()
+float *TensorView::get() const
 {
     return data_;
 }

@@ -45,6 +45,11 @@ void ArenaAllocator::reset()
     ptr_ = head_;
 }
 
+size_t ArenaAllocator::bytesAllocated() const
+{
+    return bytesAllocated_;
+}
+
 ArenaAllocator::~ArenaAllocator()
 {
     free(head_);

@@ -28,3 +28,6 @@ model_offsets.json
 
 # IDE config (uncomment if you want to ignore local settings)
 # .vscode/
+
+# Benchmark results: keep full runs (committed baselines), ignore quick runs
+bench/results/*-quick.json

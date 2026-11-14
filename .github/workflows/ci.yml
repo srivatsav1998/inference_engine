@@ -5,12 +5,12 @@ on:
     branches: [ main ]
     paths-ignore:
       - '**.md'
-      - '.agents/**'
+      - '.claude/**'
   pull_request:
     branches: [ main ]
     paths-ignore:
       - '**.md'
-      - '.agents/**'
+      - '.claude/**'
 
 jobs:
   build-and-test:
@@ -44,3 +44,7 @@ jobs:
       - name: Run Fast Synthetic E2E Regression Test
         run: |
           make test_synthetic
+
+      - name: Build Release Engine & Benchmarks (compile check only)
+        run: |
+          make bench_build
