@@ -44,3 +44,7 @@ jobs:
       - name: Run Fast Synthetic E2E Regression Test
         run: |
           make test_synthetic
+
+      - name: Build Release Engine & Benchmarks (compile check only)
+        run: |
+          make bench_build
