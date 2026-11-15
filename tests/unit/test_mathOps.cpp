@@ -16,6 +16,11 @@
 #include <sstream>
 #include <string>
 
+#include <csignal>
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
 // ============================================================================
 // matMul2D & matMul2D_out Tests
 // ============================================================================
@@ -924,4 +929,109 @@ TEST_CASE("Operator Polymorphic Hierarchy")
         scale->execute({&X}, Y);
         CHECK(Y(0, 1) == doctest::Approx(1.0f));
     }
+}
+
+// ============================================================================
+// TensorView split Tests
+// ============================================================================
+
+// Runs fn in a forked child and reports whether it died with SIGABRT (a failed assert).
+// doctest has no death tests; fork keeps the failing assert from killing the test binary.
+template <typename Fn>
+static bool abortsInChild(Fn fn)
+{
+    pid_t pid = fork();
+    if (pid == 0)
+    {
+        std::signal(SIGABRT, SIG_DFL); // bypass doctest's crash handler, which would print a report from the child
+        int devNull = open("/dev/null", O_WRONLY);
+        dup2(devNull, STDERR_FILENO); // keep the expected assert message out of the test log
+        fn();
+        _exit(0);
+    }
+    int status = 0;
+    waitpid(pid, &status, 0);
+    return WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
+}
+
+TEST_CASE("TensorView: verSplit and horSplit are zero-copy 2D slices")
+{
+    // 4x5 matrix, value = 10 * row + col
+    float data[20];
+    for (int r = 0; r < 4; ++r)
+        for (int c = 0; c < 5; ++c)
+            data[r * 5 + c] = 10.0f * r + c;
+    TensorView X(data, {4, 5}, 0);
+
+    SUBCASE("verSplit keeps columns and strides, moves the pointer by whole rows")
+    {
+        auto rows = X.verSplit(1, 3);
+        CHECK(rows.shape() == std::vector<size_t>{2, 5});
+        CHECK(rows.stride() == X.stride());
+        CHECK(rows.get() == data + 5);
+        CHECK(rows(0, 0) == 10.0f);
+        CHECK(rows(1, 4) == 24.0f);
+
+        rows(0, 2) = -1.0f; // a view, not a copy
+        CHECK(X(1, 2) == -1.0f);
+    }
+
+    SUBCASE("verSplit(N-1, N) is the last row as a [1, cols] view")
+    {
+        auto last = X.verSplit(3, 4);
+        CHECK(last.shape() == std::vector<size_t>{1, 5});
+        CHECK(last.get() == data + 15);
+        for (size_t c = 0; c < 5; ++c)
+            CHECK(last(0, c) == 30.0f + c);
+    }
+
+    SUBCASE("verSplit over the full range is the same view")
+    {
+        auto all = X.verSplit(0, 4);
+        CHECK(all.shape() == X.shape());
+        CHECK(all.get() == X.get());
+    }
+
+    SUBCASE("horSplit keeps rows and strides, moves the pointer by columns")
+    {
+        auto cols = X.horSplit(2, 5);
+        CHECK(cols.shape() == std::vector<size_t>{4, 3});
+        CHECK(cols.stride() == X.stride()); // row stride stays 5: rows are padded, not packed
+        CHECK(cols.get() == data + 2);
+        CHECK(cols(0, 0) == 2.0f);
+        CHECK(cols(3, 2) == 34.0f);
+    }
+
+    SUBCASE("splits compose: a row of a column slice")
+    {
+        auto block = X.horSplit(1, 4).verSplit(2, 3);
+        CHECK(block.shape() == std::vector<size_t>{1, 3});
+        CHECK(block(0, 0) == 21.0f);
+        CHECK(block(0, 2) == 23.0f);
+    }
+
+    SUBCASE("horSplit honours a non-unit column stride")
+    {
+        // every other column of X: shape [4, 3], strides [5, 2]
+        TensorView everyOther(data, {4, 3}, {5, 2}, 0);
+        auto tail = everyOther.horSplit(1, 3);
+        CHECK(tail.get() == data + 2);
+        CHECK(tail(0, 0) == 2.0f);
+        CHECK(tail(1, 1) == 14.0f);
+    }
+
+#ifndef NDEBUG
+    SUBCASE("out-of-range or empty splits fail the debug assert")
+    {
+        CHECK(abortsInChild([&] { (void)X.verSplit(0, 5); }));  // endRow > rows
+        CHECK(abortsInChild([&] { (void)X.verSplit(2, 2); }));  // empty
+        CHECK(abortsInChild([&] { (void)X.verSplit(3, 1); }));  // reversed
+        CHECK(abortsInChild([&] { (void)X.horSplit(0, 6); }));  // endCol > cols
+        CHECK(abortsInChild([&] { (void)X.horSplit(4, 4); }));  // empty
+        float v[3] = {};
+        TensorView vec(v, {3}, 0);
+        CHECK(abortsInChild([&] { (void)vec.verSplit(0, 1); })); // not 2D
+        CHECK(abortsInChild([&] { (void)vec.horSplit(0, 1); })); // not 2D
+    }
+#endif
 }

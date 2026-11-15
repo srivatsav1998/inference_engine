@@ -43,6 +43,14 @@ public:
 
     [[nodiscard]] const std::vector<size_t> &stride(void) const;
 
-    // The endCol is exclusive
+    // Zero-copy column slice [startCol, endCol) of a 2D view: same rows, same strides,
+    // data pointer moved by startCol columns. The result's rows are no longer contiguous
+    // with each other (row stride stays the parent's), so kernels must honor stride()[0].
+    // Debug builds assert 2D and 0 <= startCol < endCol <= cols.
     [[nodiscard]] TensorView horSplit(size_t startCol, size_t endCol) const;
+
+    // Zero-copy row slice [startRow, endRow) of a 2D view: same columns, same strides,
+    // data pointer moved by startRow rows. e.g. verSplit(N-1, N) is the last row as a [1, cols] view.
+    // Debug builds assert 2D and 0 <= startRow < endRow <= rows.
+    [[nodiscard]] TensorView verSplit(size_t startRow, size_t endRow) const;
 };

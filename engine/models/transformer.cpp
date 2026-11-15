@@ -128,19 +128,23 @@ TensorView forwardMLP(TensorView &attn, TensorView &fcWeight, TensorView &fcBias
 
 size_t extractNextTokenId(TensorView &X)
 {
+    // X is the logits for the next token only: one contiguous [1, vocab] row
+    // (infer() projects just the last hidden row). The raw-pointer scan below relies on both.
+    assert(X.ndim() == 2 && X.shape()[0] == 1 && "extractNextTokenId expects a single [1, vocab] logits row");
+    assert(X.stride()[1] == 1 && "extractNextTokenId reads the row through a raw pointer; columns must be contiguous");
+    auto x_base = X.get();
 
-    // we only care about last row of X
-    auto row = X.shape()[0] - 1;
-    auto maxSoFar = X(row, 0);
+    auto maxSoFar = *x_base;
     size_t maxIdx = 0;
 
     for (size_t j = 0; j < X.shape()[1]; ++j)
     {
-        if (maxSoFar < X(row, j))
+        auto val = *(x_base + j);
+        if (maxSoFar < val)
         {
             // this is current max
             maxIdx = j;
-            maxSoFar = X(row, j);
+            maxSoFar = val;
         }
     }
     return maxIdx;
@@ -148,25 +152,27 @@ size_t extractNextTokenId(TensorView &X)
 
 void applyTempScaling_inplace(TensorView &X, float temperature)
 {
+    assert(X.ndim() == 2 && X.shape()[0] == 1 && "sampling expects a single [1, vocab] logits row");
     auto x_shape = X.shape();
     if (temperature != 0.0f)
     {
         for (size_t j = 0; j < x_shape[1]; ++j)
         {
-            X(x_shape[0] - 1, j) /= temperature;
+            X(0, j) /= temperature;
         }
     }
 }
 
-// returns a vector of pairs containing the top K indices and their corresponding values from the last row of X, sorted in descending order of value
+// returns a vector of pairs containing the top K indices and their corresponding values from the single row of X, sorted in descending order of value
 std::vector<std::pair<float, size_t>> getTopKIndices(TensorView &X, size_t topK)
 {
+    assert(X.ndim() == 2 && X.shape()[0] == 1 && "sampling expects a single [1, vocab] logits row");
     // using a min-heap to keep exactly K elements - each entry has probability and the index
     std::priority_queue<std::pair<float, size_t>, std::vector<std::pair<float, size_t>>, std::greater<std::pair<float, size_t>>> topKHeap;
     auto x_shape = X.shape();
     for (size_t j = 0; j < x_shape[1]; ++j)
     {
-        topKHeap.push({X(x_shape[0] - 1, j), j});
+        topKHeap.push({X(0, j), j});
         if (topKHeap.size() > topK)
         {
             topKHeap.pop();
@@ -202,11 +208,14 @@ std::vector<size_t> applyTopPFiltering(const std::vector<std::pair<float, size_t
 
 size_t sampleTokenIdx(TensorView &X, float temperature, size_t topK, float topP)
 {
-    // first perform temperature scaling on the last row of X
+    // X is the logits for the next token only: one [1, vocab] row (infer() projects just the
+    // last hidden row), so every step below indexes row 0 and softmax normalizes just that row.
+    assert(X.ndim() == 2 && X.shape()[0] == 1 && "sampleTokenIdx expects a single [1, vocab] logits row");
+
+    // first perform temperature scaling on the logits row
     applyTempScaling_inplace(X, temperature);
 
     // convert the logits to probabilities
-    // TODO: Add verSplit to TensorView to avoid applying softmax to all rows during the prefill phase
     softmax_out(X, X);
 
     // apply top-k filtering
@@ -219,7 +228,7 @@ size_t sampleTokenIdx(TensorView &X, float temperature, size_t topK, float topP)
     float sumProb = 0.0f;
     for (const auto &idx : keptIndices)
     {
-        sumProb += X(X.shape()[0] - 1, idx);
+        sumProb += X(0, idx);
     }
 
     // perform sampling from the kept indices
@@ -233,7 +242,7 @@ size_t sampleTokenIdx(TensorView &X, float temperature, size_t topK, float topP)
     float cumulativeProb = 0.0f;
     for (size_t i = 0; i < keptIndices.size(); ++i)
     {
-        cumulativeProb += X(X.shape()[0] - 1, keptIndices[i]);
+        cumulativeProb += X(0, keptIndices[i]);
         if (tar <= cumulativeProb)
         {
             return keptIndices[i];
