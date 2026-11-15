@@ -51,17 +51,17 @@ size_t Engine::stepArenaBytes(size_t rows, size_t contextLen) const
     { return ArenaAllocator::alignedSize(sizeof(float) * rows * cols); };
 
     // Per transformer layer. Nothing is freed until the end of the step, so layers add up.
-    const size_t perLayer = block(qkvCols)                                  // qkv
-                            + block(D)                                      // attention output O
-                            + NUM_ATTENTION_HEADS * block(contextLen)       // scores, one per head
-                            + block(attnProjCols)                           // attention projection
-                            + block(fcCols)                                 // MLP hidden
-                            + block(mlpProjCols);                           // MLP projection
+    const size_t perLayer = block(qkvCols)                            // qkv
+                            + block(D)                                // attention output O
+                            + NUM_ATTENTION_HEADS * block(contextLen) // scores, one per head
+                            + block(attnProjCols)                     // attention projection
+                            + block(fcCols)                           // MLP hidden
+                            + block(mlpProjCols);                     // MLP projection
 
-    return block(D)                               // X (embeddings / residual stream)
-           + block(D)                             // normX
-           + model_.layers.size() * perLayer
-           + block(vocab);                        // logits
+    auto total = block(D)                                                                                // X (embeddings / residual stream)
+                 + block(D)                                                                              // normX
+                 + model_.layers.size() * perLayer + ArenaAllocator::alignedSize(sizeof(float) * vocab); // logits
+    return total;
 }
 
 void Engine::validateRequest(const std::vector<size_t> &prompt, unsigned int maxTokens) const
@@ -144,12 +144,19 @@ size_t Engine::infer(std::vector<size_t> &prompt, unsigned int *response, unsign
         // final layerNormalization (reusing normX buffer)
         layerNorm_out(X, model_.ln_f_weight, model_.ln_f_bias, normX);
 
-        // un-embedding projection: normX [N, 768] * wte_weight^T [768, 50257] -> [N, 50257]
-        std::vector<size_t> out_shape{normX.shape()[0], model_.wte_weight.shape()[0]};
+        // un-embedding projection, last row only: normX[N-1] [1, 768] * wte_weight^T [768, 50257] -> [1, 50257]
+        // Only the last position predicts the next token, and ln_f / LM head / softmax are row-wise,
+        // so rows 0..N-2 can't affect it. Projecting all N rows re-streamed the 154 MB wte once per row
+        // (≈250 ms of TTFT at N = 128) and needed an [N, 50257] logits buffer.
+        std::vector<size_t> out_shape{1, model_.wte_weight.shape()[0]};
         bytesRequired = sizeof(float) * (out_shape[0] * out_shape[1]);
 
         TensorView result(arena_.alloc(bytesRequired), out_shape, 0);
-        matMul2D_out(normX, model_.wte_weight, result, /*transposeA=*/false, /*transposeB=*/true);
+
+        // zero-copy [1, 768] view of the last row
+        auto normX_last = normX.verSplit(normX.shape()[0] - 1, normX.shape()[0]);
+
+        matMul2D_out(normX_last, model_.wte_weight, result, /*transposeA=*/false, /*transposeB=*/true);
 
         // extracting next word
         size_t token;
