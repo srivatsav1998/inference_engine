@@ -4,6 +4,7 @@
 #include "KVCache.hpp"
 #include "arenaAllocator.hpp"
 #include "tensorView.hpp"
+#include "GPT2Model.hpp"
 
 #include <queue>
 #include <random>
@@ -69,7 +70,7 @@ TensorView forwardAttention(TensorView &normX, TensorView &attnWeight, TensorVie
     bytesRequired = sizeof(float) * N * colSize;
     TensorView O(alloc.alloc(bytesRequired), {N, colSize}, 0);
 
-    for (int i = 0; i < 12; ++i)
+    for (size_t i = 0; i < NUM_ATTENTION_HEADS; ++i)
     {
         // compute Q, K, and V for this head
         auto headColSize = 64;

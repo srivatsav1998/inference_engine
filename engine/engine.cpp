@@ -6,6 +6,11 @@
 #include "GPT2Model.hpp"
 #include "transformer.hpp"
 
+#include <algorithm>
+#include <cassert>
+#include <stdexcept>
+#include <string>
+
 TensorView embedTokens(std::vector<size_t> tokenIds, TensorView &wpe, TensorView &wte, int absStartPos, ArenaAllocator &alloc)
 {
     // output shape
@@ -27,15 +32,66 @@ TensorView embedTokens(std::vector<size_t> tokenIds, TensorView &wpe, TensorView
     return result;
 }
 
-Engine::Engine(size_t arenaSize, const char *modelWeightsPath, const char *modelConfigPath) : loader_(modelWeightsPath), arena_(arenaSize * 1e6)
+Engine::Engine(const char *modelWeightsPath, const char *modelConfigPath) : loader_(modelWeightsPath)
 {
     model_ = buildModel(loader_, modelConfigPath);
 }
 
-void Engine::infer(std::vector<size_t> &prompt, unsigned int *response, unsigned int maxTokens, float temperature, size_t topK, float topP)
+size_t Engine::stepArenaBytes(size_t rows, size_t contextLen) const
 {
+    const auto &layer = model_.layers.front();
+    const size_t D = EMBEDDING_SIZE;
+    const size_t qkvCols = layer.attn_c_attn_weight.shape()[1];
+    const size_t attnProjCols = layer.attn_c_proj_weight.shape()[1];
+    const size_t fcCols = layer.mlp_c_fc_weight.shape()[1];
+    const size_t mlpProjCols = layer.mlp_c_proj_weight.shape()[1];
+    const size_t vocab = model_.wte_weight.shape()[0];
+
+    auto block = [rows](size_t cols)
+    { return ArenaAllocator::alignedSize(sizeof(float) * rows * cols); };
+
+    // Per transformer layer. Nothing is freed until the end of the step, so layers add up.
+    const size_t perLayer = block(qkvCols)                                  // qkv
+                            + block(D)                                      // attention output O
+                            + NUM_ATTENTION_HEADS * block(contextLen)       // scores, one per head
+                            + block(attnProjCols)                           // attention projection
+                            + block(fcCols)                                 // MLP hidden
+                            + block(mlpProjCols);                           // MLP projection
+
+    return block(D)                               // X (embeddings / residual stream)
+           + block(D)                             // normX
+           + model_.layers.size() * perLayer
+           + block(vocab);                        // logits
+}
+
+void Engine::validateRequest(const std::vector<size_t> &prompt, unsigned int maxTokens) const
+{
+    const size_t contextLimit = model_.wpe_weight.shape()[0]; // 1024 positions for GPT-2
+    const size_t vocab = model_.wte_weight.shape()[0];
+
+    if (prompt.empty())
+        throw std::invalid_argument("prompt must contain at least one token");
+    if (maxTokens <= prompt.size())
+        throw std::invalid_argument("max_tokens (" + std::to_string(maxTokens) + ") must be greater than the prompt length (" + std::to_string(prompt.size()) + ")");
+    if (maxTokens > contextLimit)
+        throw std::invalid_argument("max_tokens (" + std::to_string(maxTokens) + ") exceeds the model context of " + std::to_string(contextLimit));
+    for (size_t token : prompt)
+        if (token >= vocab)
+            throw std::invalid_argument("token id " + std::to_string(token) + " is outside the vocabulary (" + std::to_string(vocab) + ")");
+}
+
+size_t Engine::infer(std::vector<size_t> &prompt, unsigned int *response, unsigned int maxTokens, float temperature, size_t topK, float topP)
+{
+    validateRequest(prompt, maxTokens);
+
+    // Size the arena for this request before touching `response`. The peak step is either the
+    // prefill (all prompt rows attending to each other) or the last decode step (one row
+    // attending to the whole context). Capacity only grows, so repeated requests reuse it.
+    const size_t promptLen = prompt.size();
+    arena_.reserve(std::max(stepArenaBytes(promptLen, promptLen), stepArenaBytes(1, maxTokens - 1)));
+
     // copy contents of prompt to response
-    auto respIdx = 0;
+    size_t respIdx = 0;
     for (const auto &wordT : prompt)
     {
         response[respIdx++] = wordT;
@@ -111,16 +167,21 @@ void Engine::infer(std::vector<size_t> &prompt, unsigned int *response, unsigned
         response[respIdx++] = token;
         prompt.push_back(token);
 
+        // The arena plan must match what this step really allocated (see stepArenaBytes).
+        assert(arena_.bytesAllocated() == stepArenaBytes(X.shape()[0], cachePos + X.shape()[0]) && "stepArenaBytes is out of sync with infer's arena allocations");
+
         // resetting memory
         arena_.reset();
 
         // updating the cache position
         cachePos += X.shape()[0];
 
-        if (token == 50256) // <|endoftext|>
+        if (token == END_OF_TEXT_TOKEN)
         {
             // End of text generation.
             break;
         }
     }
+
+    return respIdx;
 }

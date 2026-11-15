@@ -26,7 +26,7 @@ GPT-2 124M is small enough to iterate on quickly, yet structurally a full decode
 | `engine/models/` | GPT-2 weight structs, attention/MLP blocks, `KVCache`, sampling (greedy, temperature, top-k, top-p) |
 | `engine/engine.cpp`, `engineAPI.cpp` | Hand-written prefill + autoregressive decode loop; C-linkage API |
 | `frontend/`, `scripts/` | Python frontend; weight export, synthetic weight generation and verification |
-| `tests/` | doctest kernel unit tests (including a MatMul sweep over shapes, transposes and strided layouts against a double-precision reference); synthetic and real-weight greedy-decoding E2E regression tests |
+| `tests/` | doctest kernel and arena unit tests (including a MatMul sweep over shapes, transposes and strided layouts against a double-precision reference); synthetic and real-weight greedy-decoding E2E regression tests; C API contract test (input validation, buffer bounds) |
 | `bench/` | Benchmark suite: kernels, memory bandwidth, E2E engine vs PyTorch ([details](./bench/README.md)) |
 
 ---
@@ -36,9 +36,9 @@ GPT-2 124M is small enough to iterate on quickly, yet structurally a full decode
 ```bash
 make weights          # download & export HuggingFace GPT-2 weights into bin/ (needs scripts/requirements.txt)
 
-make check            # debug build + C++ unit tests (2,289 assertions) + synthetic E2E test (~2 s)
+make check            # debug build + C++ unit tests (2,307 assertions) + synthetic E2E + C API contract tests (~7 s)
 make test             # C++ unit tests only
-make test_synthetic   # synthetic-weight greedy regression (no downloads; what CI runs)
+make test_synthetic   # synthetic-weight greedy regression + C API contract test (no downloads; what CI runs)
 make test_full        # real GPT-2 greedy decoding regression (needs bin/ weights)
 
 make bench            # full benchmark suite (release build, ~3 min, needs bin/ weights)
@@ -89,14 +89,13 @@ Earlier pre-harness numbers (cold-start wall-clock over a few tokens, plus peak 
 2. **The transposed-B (dot-product) MatMul path re-streams `B` for every row.** At M > 1 it reads all 154 MB of `wte` once per row of `A` (the matrix doesn't fit in cache), so the prefill LM head's cost grows linearly with M: ≈250 ms at M = 128, against ≈13 ms for Accelerate.
 3. **The work split ignores P/E cores.** Rows are split into equal chunks across all 8 cores and the call waits for every chunk, so a chunk scheduled on a slower efficiency core delays the whole call.
 4. **Prefill computes logits for every prompt row**, but only the last row is used to pick the next token. At 128 tokens, the LM-head MatMul alone takes ≈250 ms of the ≈667 ms TTFT.
-5. **The activation arena is a fixed 90 MB.** Prefill runs out of memory at about 192 prompt tokens: `ArenaAllocator::alloc` returns `nullptr` and the process crashes.
+5. **Activation memory grows quickly with prompt length.** The arena is sized exactly per request (`Engine::stepArenaBytes`), but nothing is freed between layers within a step, and logits are kept for every prompt row. A 1023-token prompt needs ≈1.2 GB of arena: ≈51% attention scores, ≈17% logits. A decode step needs ≈1.2 MB.
 6. **`TaskQueue` tracks completion with one global counter.** Two concurrent callers would each wait for the other's tasks as well, so the pool assumes a single caller at a time.
 7. **`LayerNormOp` stores `eps` and `SoftmaxOp` stores `axis`, but neither is passed to its kernel.**
-8. **`init_engine` returns an uninitialized pointer** if `Engine` construction throws.
-9. **Model dimensions are hardcoded:** `EMBEDDING_SIZE 768`, 12 layers.
-10. **Pointwise kernels reach only ≈1–4 GB/s.** They are scalar loops through `TensorView::operator()`. That costs well under 1 ms per decode step today, but it will show up as the MatMuls get faster.
-11. **The release build warns about unused variables** in `matMul2D_out` (`M`, `K_B`), because they are only used inside asserts.
-12. **`matMul2D_out` gives wrong results for a column-strided output** (`O.stride()[1] != 1`) in the non-transposed fast path. That path checks only `B`'s column stride, but stores 4 adjacent floats into `O`. No caller in the engine passes such an output today; the unit-test sweep excludes that layout until the kernel handles it.
+8. **Model dimensions are hardcoded:** `EMBEDDING_SIZE 768`, 12 layers.
+9. **Pointwise kernels reach only ≈1–4 GB/s.** They are scalar loops through `TensorView::operator()`. That costs well under 1 ms per decode step today, but it will show up as the MatMuls get faster.
+10. **The release build warns about unused variables** in `matMul2D_out` (`M`, `K_B`), because they are only used inside asserts.
+11. **`matMul2D_out` gives wrong results for a column-strided output** (`O.stride()[1] != 1`) in the non-transposed fast path. That path checks only `B`'s column stride, but stores 4 adjacent floats into `O`. No caller in the engine passes such an output today; the unit-test sweep excludes that layout until the kernel handles it.
 
 ---
 

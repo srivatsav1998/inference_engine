@@ -8,7 +8,9 @@
 
 #include <vector>
 #include <cmath>
+#include <cstdint>
 #include <limits>
+#include <new>
 #include <numeric>
 #include <random>
 #include <sstream>
@@ -482,6 +484,64 @@ TEST_CASE("matMul2D_out: repeated calls into a reused (dirty) output buffer")
                     identical = identical && (O.at(i, n) == first[idx++]);
             CHECK(identical);
         }
+    }
+}
+
+// ============================================================================
+// ArenaAllocator Tests
+// ============================================================================
+TEST_CASE("ArenaAllocator: alignment, exhaustion, reserve and reset")
+{
+    SUBCASE("allocations are 16-byte aligned and sized by alignedSize")
+    {
+        CHECK(ArenaAllocator::alignedSize(0) == 0);
+        CHECK(ArenaAllocator::alignedSize(1) == 16);
+        CHECK(ArenaAllocator::alignedSize(16) == 16);
+        CHECK(ArenaAllocator::alignedSize(17) == 32);
+
+        ArenaAllocator arena(1024);
+        float *a = arena.alloc(4);
+        float *b = arena.alloc(20);
+        CHECK(reinterpret_cast<std::uintptr_t>(a) % 16 == 0);
+        CHECK(reinterpret_cast<std::uintptr_t>(b) % 16 == 0);
+        CHECK(arena.bytesAllocated() == 16 + 32);
+    }
+
+    SUBCASE("a full arena throws instead of returning nullptr")
+    {
+        ArenaAllocator arena(64);
+        CHECK_NOTHROW(arena.alloc(64));
+        CHECK_THROWS_AS(arena.alloc(1), std::bad_alloc);
+        CHECK(arena.bytesAllocated() == 64); // failed allocation changes nothing
+    }
+
+    SUBCASE("an empty arena throws on first use")
+    {
+        ArenaAllocator arena;
+        CHECK(arena.capacity() == 0);
+        CHECK_THROWS_AS(arena.alloc(16), std::bad_alloc);
+    }
+
+    SUBCASE("reserve grows capacity, never shrinks it")
+    {
+        ArenaAllocator arena(64);
+        arena.reserve(4096);
+        CHECK(arena.capacity() == 4096);
+        CHECK_NOTHROW(arena.alloc(4096));
+
+        arena.reset();
+        arena.reserve(128); // smaller request keeps the existing block
+        CHECK(arena.capacity() == 4096);
+        CHECK(arena.bytesAllocated() == 0);
+    }
+
+    SUBCASE("reset makes the whole capacity available again")
+    {
+        ArenaAllocator arena(64);
+        float *first = arena.alloc(64);
+        arena.reset();
+        CHECK(arena.bytesAllocated() == 0);
+        CHECK(arena.alloc(64) == first);
     }
 }
 

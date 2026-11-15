@@ -21,7 +21,7 @@ engine.init_engine.argtypes = []
 engine.init_engine.restype = ctypes.c_void_p
 
 engine.generate.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32), ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32), ctypes.c_uint32, ctypes.c_float, ctypes.c_uint32, ctypes.c_float]
-engine.generate.restype = None
+engine.generate.restype = ctypes.c_int  # entries written, or -1 on error
 
 ### Engine initialization
 engine_ptr = engine.init_engine();
@@ -43,8 +43,11 @@ c_prompt = (ctypes.c_uint32 * len(prompt_ids))(*prompt_ids)
 c_out = (ctypes.c_uint32 * (max_tokens))()
 
 ### Generate the text
-engine.generate(engine_ptr, c_prompt, len(prompt_ids), c_out, max_tokens, ctypes.c_float(0.8), ctypes.c_uint32(40), ctypes.c_float(0.95))
-out_list = list(c_out)
+n = engine.generate(engine_ptr, c_prompt, len(prompt_ids), c_out, max_tokens, ctypes.c_float(0.8), ctypes.c_uint32(40), ctypes.c_float(0.95))
+if n < 0:
+    print("Generation failed (see the error above)")
+    sys.exit(1)
+out_list = list(c_out)[:n]
 
 print(f'Generated {len(out_list)} words')
 

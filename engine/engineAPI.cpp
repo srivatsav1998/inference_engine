@@ -23,11 +23,9 @@ void *init_engine()
     std::string weightsPath = binDir + "/" + MODEL_WEIGHTS_FILE_NAME;
     std::string configPath = binDir + "/" + MODEL_CONFIG_FILE_NAME;
 
-    size_t arenaSizeInMB = 100;
-
     try
     {
-        enginePtr = new Engine(arenaSizeInMB, weightsPath.c_str(), configPath.c_str());
+        enginePtr = new Engine(weightsPath.c_str(), configPath.c_str());
     }
     catch (std::exception &ex)
     {
@@ -37,21 +35,25 @@ void *init_engine()
     return enginePtr;
 }
 
-void generate(void *enginePtr, unsigned int *prompt, unsigned int prompt_len, unsigned int *output, unsigned int max_tokens, float temperature, unsigned int topK, float topP)
+int generate(void *enginePtr, unsigned int *prompt, unsigned int prompt_len, unsigned int *output, unsigned int max_tokens, float temperature, unsigned int topK, float topP)
 {
+    if (enginePtr == nullptr || prompt == nullptr || output == nullptr)
+    {
+        std::cerr << "generate: engine, prompt and output must be non-null" << std::endl;
+        return -1;
+    }
+
     Engine *engine = static_cast<Engine *>(enginePtr);
+    std::vector<size_t> prompt_(prompt, prompt + prompt_len);
 
-    std::vector<size_t> prompt_;
-    // check the max_tokens limit
-    if (prompt_len >= max_tokens)
+    // Exceptions must not cross the C boundary into the caller (ctypes would abort the process).
+    try
     {
-        // reached the limit so only copy first max_tokens number of tokens to prompt
-        prompt_ = std::vector<size_t>(prompt, prompt + prompt_len);
+        return static_cast<int>(engine->infer(prompt_, output, max_tokens, temperature, static_cast<size_t>(topK), topP));
     }
-    else
+    catch (const std::exception &ex)
     {
-        prompt_ = std::vector<size_t>(prompt, prompt + prompt_len);
+        std::cerr << "generate: " << ex.what() << std::endl;
+        return -1;
     }
-
-    engine->infer(prompt_, output, max_tokens, temperature, static_cast<size_t>(topK), topP);
 }

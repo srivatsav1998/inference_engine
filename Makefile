@@ -71,6 +71,8 @@ test: $(TARGET) $(TEST_OBJS)
 test_synthetic: $(TARGET)
 	@echo "Running Synthetic E2E Regression Test..."
 	@$(PYTHON) tests/e2e/test_synthetic_regression.py
+	@echo "Running C API Contract Test..."
+	@$(PYTHON) tests/e2e/test_api_contract.py
 
 # Full E2E greedy decoding regression test (Requires real HuggingFace weights)
 test_full: $(TARGET)
