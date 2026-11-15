@@ -116,13 +116,47 @@ void matMul2D_out(const TensorView &A, const TensorView &B, TensorView &O, bool 
                 {
                     float sum = 0.0f;
                     size_t j = 0;
-                    float32x4_t acc = vdupq_n_f32(0.0f);
 
                     float *a_base = &A(i, j);
                     size_t a_stride = A.stride()[1];
 
                     float *b_base = &B(k, j);
                     size_t b_stride = B.stride()[1];
+
+                    float32x4_t acc0 = vdupq_n_f32(0.0f);
+                    float32x4_t acc1 = vdupq_n_f32(0.0f);
+                    float32x4_t acc2 = vdupq_n_f32(0.0f);
+                    float32x4_t acc3 = vdupq_n_f32(0.0f);
+                    for (; j + 16 <= K; j += 16)
+                    {
+                        float *a_pos = a_base + a_stride * j;
+                        float *b_pos = b_base + b_stride * j;
+
+                        float32x4_t a_vec = vld1q_f32(a_pos);
+                        float32x4_t b_vec = vld1q_f32(b_pos);
+                        acc0 = vmlaq_f32(acc0, a_vec, b_vec);
+
+                        a_pos += 4;
+                        b_pos += 4;
+
+                        a_vec = vld1q_f32(a_pos);
+                        b_vec = vld1q_f32(b_pos);
+                        acc1 = vmlaq_f32(acc1, a_vec, b_vec);
+
+                        a_pos += 4;
+                        b_pos += 4;
+
+                        a_vec = vld1q_f32(a_pos);
+                        b_vec = vld1q_f32(b_pos);
+                        acc2 = vmlaq_f32(acc2, a_vec, b_vec);
+
+                        a_pos += 4;
+                        b_pos += 4;
+
+                        a_vec = vld1q_f32(a_pos);
+                        b_vec = vld1q_f32(b_pos);
+                        acc3 = vmlaq_f32(acc3, a_vec, b_vec);
+                    }
 
                     for (; j + 4 <= K; j += 4)
                     {
@@ -131,9 +165,10 @@ void matMul2D_out(const TensorView &A, const TensorView &B, TensorView &O, bool 
 
                         float32x4_t a_vec = vld1q_f32(a_pos);
                         float32x4_t b_vec = vld1q_f32(b_pos);
-                        acc = vmlaq_f32(acc, a_vec, b_vec);
+                        acc0 = vmlaq_f32(acc0, a_vec, b_vec);
                     }
-                    sum = vaddvq_f32(acc);
+
+                    sum = vaddvq_f32(acc0) + vaddvq_f32(acc1) + vaddvq_f32(acc2) + vaddvq_f32(acc3);
 
                     for (; j < K; ++j)
                     {
