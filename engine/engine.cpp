@@ -42,16 +42,16 @@ void Engine::infer(std::vector<size_t> &prompt, unsigned int *response, unsigned
     }
 
     KVCache cache(maxTokens, model_.layers.size(), EMBEDDING_SIZE);
-    size_t currSize = prompt.size() - 1;
+    size_t idxOfLastToken = prompt.size() - 1;
     size_t cachePos = 0;
 
     // Loop runs exactly enough times to reach maxTokens total length
-    for (size_t token = currSize; token < maxTokens - 1; token++)
+    for (size_t tokenIdx = idxOfLastToken; tokenIdx < maxTokens - 1; tokenIdx++)
     {
         // token indicates the id of the last token in prompt
         TensorView X;
 
-        if (token == currSize)
+        if (tokenIdx == idxOfLastToken)
         {
             // prefill phase
             X = embedTokens(prompt, model_.wpe_weight, model_.wte_weight, 0, arena_);
@@ -60,7 +60,7 @@ void Engine::infer(std::vector<size_t> &prompt, unsigned int *response, unsigned
         {
             // decoder phase
             // passing in token as absStartPos
-            X = embedTokens({prompt[token]}, model_.wpe_weight, model_.wte_weight, token, arena_);
+            X = embedTokens({prompt[tokenIdx]}, model_.wpe_weight, model_.wte_weight, tokenIdx, arena_);
         }
 
         size_t bytesRequired = sizeof(float) * X.shape()[0] * X.shape()[1];
@@ -96,25 +96,31 @@ void Engine::infer(std::vector<size_t> &prompt, unsigned int *response, unsigned
         matMul2D_out(normX, model_.wte_weight, result, /*transposeA=*/false, /*transposeB=*/true);
 
         // extracting next word
-        size_t tokenId;
+        size_t token;
 
         float diff = std::abs(temperature - 0.0f);
         if (diff < 1e-6f)
         {
-            tokenId = extractNextTokenId(result);
+            token = extractNextTokenId(result);
         }
         else
         {
-            tokenId = sampleTokenIdx(result, temperature, topK, topP);
+            token = sampleTokenIdx(result, temperature, topK, topP);
         }
 
-        response[respIdx++] = tokenId;
-        prompt.push_back(tokenId);
+        response[respIdx++] = token;
+        prompt.push_back(token);
 
         // resetting memory
         arena_.reset();
 
         // updating the cache position
         cachePos += X.shape()[0];
+
+        if (token == 50256) // <|endoftext|>
+        {
+            // End of text generation.
+            break;
+        }
     }
 }

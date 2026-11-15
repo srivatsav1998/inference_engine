@@ -26,9 +26,13 @@ engine.generate.restype = None
 ### Engine initialization
 engine_ptr = engine.init_engine();
 
+if(engine_ptr is None):
+    print("Failed to initialize engine")
+    sys.exit(1)
+
 ### Text generation phase
-max_tokens = 24
-prompt = input("Enter the prompt (total sequence length is 24): ")
+max_tokens = 256
+prompt = input("Enter the prompt (total sequence length is 256): ")
 
 ### Tokenize the given prompt
 gpt2_tokenizer = tiktoken.get_encoding("gpt2")
