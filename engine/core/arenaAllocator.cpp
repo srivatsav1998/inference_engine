@@ -1,35 +1,49 @@
-
 #include "arenaAllocator.hpp"
 
-#include <iostream>
+#include <cassert>
+#include <cstdlib>
+#include <new>
 
 ArenaAllocator::ArenaAllocator(size_t totalBytesToAllocate)
-    : totalBytes_(totalBytesToAllocate),
-      head_(malloc(totalBytesToAllocate)),
-      ptr_(head_),
-      bytesAllocated_(0)
+    : totalBytes_(0), head_(nullptr), ptr_(nullptr), bytesAllocated_(0)
 {
-    if (head_ == nullptr)
+    reserve(totalBytesToAllocate);
+}
+
+size_t ArenaAllocator::alignedSize(size_t sizeInBytes)
+{
+    // SIMD registers prefer a memory location that is a multiple of 16
+    return (sizeInBytes + 15) & ~static_cast<size_t>(15);
+}
+
+void ArenaAllocator::reserve(size_t bytes)
+{
+    assert(bytesAllocated_ == 0 && "ArenaAllocator::reserve called while allocations are live");
+    if (bytes <= totalBytes_)
     {
-        std::cout << "Couldn't allocate requested amount of memory" << std::endl;
-        throw std::runtime_error("Couldn't allocate requested amount of memory");
+        return;
     }
+
+    void *block = malloc(bytes);
+    if (block == nullptr)
+    {
+        throw std::bad_alloc();
+    }
+
+    free(head_);
+    head_ = block;
+    ptr_ = head_;
+    totalBytes_ = bytes;
 }
 
 float *ArenaAllocator::alloc(size_t sizeInBytes)
 {
-    // SIMD registers prefer a memory location that is a multiple of 16
-    size_t roundOff = sizeInBytes % 16;
-    if (roundOff != 0)
-    {
-        sizeInBytes += 16 - roundOff;
-    }
+    sizeInBytes = alignedSize(sizeInBytes);
 
     // check if allocation is even possible
     if (bytesAllocated_ + sizeInBytes > totalBytes_)
     {
-        std::cout << "Out of memory" << std::endl;
-        return nullptr;
+        throw std::bad_alloc();
     }
 
     // Allocation is possible
@@ -48,6 +62,11 @@ void ArenaAllocator::reset()
 size_t ArenaAllocator::bytesAllocated() const
 {
     return bytesAllocated_;
+}
+
+size_t ArenaAllocator::capacity() const
+{
+    return totalBytes_;
 }
 
 ArenaAllocator::~ArenaAllocator()

@@ -72,7 +72,7 @@ def run_engine(args):
         ctypes.POINTER(ctypes.c_uint32), ctypes.c_uint32,
         ctypes.c_float, ctypes.c_uint32, ctypes.c_float,
     ]
-    lib.generate.restype = None
+    lib.generate.restype = ctypes.c_int
 
     t0 = time.perf_counter()
     handle = lib.init_engine()
@@ -84,8 +84,11 @@ def run_engine(args):
         c_prompt = (ctypes.c_uint32 * len(prompt))(*prompt)
         c_out = (ctypes.c_uint32 * total_len)()
         cpu0, t0 = rusage_cpu(), time.perf_counter()
-        lib.generate(handle, c_prompt, len(prompt), c_out, total_len, 0.0, 0, 0.0)
+        n = lib.generate(handle, c_prompt, len(prompt), c_out, total_len, 0.0, 0, 0.0)
         wall = time.perf_counter() - t0
+        if n != total_len:
+            # An error (-1) or an early <|endoftext|> would make the per-token timing meaningless.
+            raise RuntimeError(f"generate wrote {n} of {total_len} tokens")
         return wall, rusage_cpu() - cpu0, list(c_out)
 
     first_prompt = prompt_tokens(args.prompt_lens[0])

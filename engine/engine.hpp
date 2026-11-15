@@ -9,11 +9,22 @@
 class Engine
 {
 public:
-    Engine(size_t arenaSize, const char *modelWeightsPath, const char *modelConfigPath);
+    Engine(const char *modelWeightsPath, const char *modelConfigPath);
 
-    void infer(std::vector<size_t> &prompt, unsigned int *reponse, unsigned int maxTokens, float temperature, size_t topK, float topP);
+    // Writes the prompt followed by generated tokens into `response` (capacity: maxTokens) and
+    // returns how many entries were written (<= maxTokens; fewer if <|endoftext|> is generated).
+    // Throws std::invalid_argument for an out-of-range request and std::bad_alloc if the
+    // activation arena cannot be grown; nothing is written to `response` in either case.
+    size_t infer(std::vector<size_t> &prompt, unsigned int *response, unsigned int maxTokens, float temperature, size_t topK, float topP);
 
 private:
+    // Exact arena bytes one forward step uses: `rows` new tokens attending to `contextLen`
+    // positions (cached + new). Mirrors every arena allocation in infer / forwardAttention /
+    // forwardMLP; a debug-build assert in infer() fails if the two ever drift apart.
+    [[nodiscard]] size_t stepArenaBytes(size_t rows, size_t contextLen) const;
+
+    void validateRequest(const std::vector<size_t> &prompt, unsigned int maxTokens) const;
+
     ModelWeightsLoader loader_;
     ArenaAllocator arena_;
     GPT2Model model_;

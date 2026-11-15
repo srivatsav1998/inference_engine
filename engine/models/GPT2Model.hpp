@@ -2,7 +2,12 @@
 
 #include "tensorView.hpp"
 
+#include <cstddef>
+
 #define EMBEDDING_SIZE 768
+
+constexpr size_t NUM_ATTENTION_HEADS = 12;
+constexpr size_t END_OF_TEXT_TOKEN = 50256; // <|endoftext|>
 
 struct TransformerBlockWeights
 {

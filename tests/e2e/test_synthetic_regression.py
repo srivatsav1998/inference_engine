@@ -44,7 +44,7 @@ def main():
         ctypes.c_uint32,
         ctypes.c_float
     ]
-    engine.generate.restype = None
+    engine.generate.restype = ctypes.c_int
 
     print("Initializing engine with synthetic weights...")
     engine_ptr = engine.init_engine()
@@ -61,7 +61,7 @@ def main():
     c_out = (ctypes.c_uint32 * max_tokens)()
 
     print(f"Running deterministic greedy generation with prompt {prompt_ids}...")
-    engine.generate(
+    n = engine.generate(
         engine_ptr,
         c_prompt,
         len(prompt_ids),
@@ -72,7 +72,10 @@ def main():
         ctypes.c_float(0.95)
     )
 
-    out_list = list(c_out)
+    if n < 0:
+        print("Error: generate() returned -1")
+        sys.exit(1)
+    out_list = list(c_out)[:n]
     print(f"Generated token IDs: {out_list}")
 
     if out_list == expected_output:

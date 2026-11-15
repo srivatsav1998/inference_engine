@@ -26,7 +26,7 @@ Both targets build the engine with `BUILD=release` (`-O3 -DNDEBUG`, so asserts a
 - **Engine decode timing** is black-box: `(t(L→L+1+D) − t(L→L+1)) / D`, because the C API doesn't expose per-step timing. TTFT includes one LM-head projection and sampling.
 - **Roofline**: decode streams every fp32 weight once per token (≈498 MB). The floor is that size divided by the measured peak read bandwidth.
 - **Isolation**: each E2E backend runs in its own process, so peak RSS and CPU utilization belong to that backend only. PyTorch runs offline (`HF_HUB_OFFLINE=1`) from the local HF cache.
-- **Prompt lengths are capped at 128.** The engine's fixed 90 MB activation arena overflows during prefill at about 192 tokens.
+- **Prompt lengths stay at 8 / 32 / 128** so results remain comparable with earlier runs. (Longer prompts used to overflow the engine's fixed 90 MB arena; the arena is now sized per request.)
 
 ## Not yet measured (needs engine support)
 

@@ -13,32 +13,47 @@ constexpr const char *MODEL_CONFIG_FILE_NAME = "model_offsets.json";
 
 void *init_engine()
 {
-    // initializing the engine with default parameters
-    Engine *engine;
+    // engine pointer
+    Engine *enginePtr = nullptr;
 
-    const char* env_p = std::getenv("ENGINE_BIN_DIR");
-    std::string bin_dir = env_p ? std::string(env_p) : ".";
-    
-    std::string weights_path = bin_dir + "/" + MODEL_WEIGHTS_FILE_NAME;
-    std::string config_path = bin_dir + "/" + MODEL_CONFIG_FILE_NAME;
+    // get the engine library bin directory
+    const char *engDir = std::getenv("ENGINE_BIN_DIR");
+    std::string binDir = engDir ? std::string(engDir) : ".";
+
+    std::string weightsPath = binDir + "/" + MODEL_WEIGHTS_FILE_NAME;
+    std::string configPath = binDir + "/" + MODEL_CONFIG_FILE_NAME;
 
     try
     {
-        engine = new Engine(90, weights_path.c_str(), config_path.c_str());
+        enginePtr = new Engine(weightsPath.c_str(), configPath.c_str());
     }
     catch (std::exception &ex)
     {
         std::cerr << "Failed to instantiate an engine due to " << ex.what() << std::endl;
     }
 
-    return engine;
+    return enginePtr;
 }
 
-void generate(void *enginePtr, unsigned int *prompt, unsigned int prompt_len, unsigned int *output, unsigned int max_tokens, float temperature, unsigned int topK, float topP)
+int generate(void *enginePtr, unsigned int *prompt, unsigned int prompt_len, unsigned int *output, unsigned int max_tokens, float temperature, unsigned int topK, float topP)
 {
-    Engine *engine = static_cast<Engine *>(enginePtr);
+    if (enginePtr == nullptr || prompt == nullptr || output == nullptr)
+    {
+        std::cerr << "generate: engine, prompt and output must be non-null" << std::endl;
+        return -1;
+    }
 
+    Engine *engine = static_cast<Engine *>(enginePtr);
     std::vector<size_t> prompt_(prompt, prompt + prompt_len);
 
-    engine->infer(prompt_, output, max_tokens, temperature, static_cast<size_t>(topK), topP);
+    // Exceptions must not cross the C boundary into the caller (ctypes would abort the process).
+    try
+    {
+        return static_cast<int>(engine->infer(prompt_, output, max_tokens, temperature, static_cast<size_t>(topK), topP));
+    }
+    catch (const std::exception &ex)
+    {
+        std::cerr << "generate: " << ex.what() << std::endl;
+        return -1;
+    }
 }

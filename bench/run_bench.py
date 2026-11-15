@@ -202,8 +202,7 @@ def main():
     ap.add_argument("--out-dir", default=os.path.join(REPO, "bench", "results"))
     args = ap.parse_args()
 
-    # Prompt lengths are capped at 128: the engine's fixed 90 MB activation arena overflows
-    # during prefill at ~192 tokens (see README "Known issues").
+    # Prompt lengths stay at 8/32/128 so results remain comparable with earlier baselines.
     if args.quick:
         args.prompt_lens, args.decode_tokens, args.repeats, args.no_torch = [8, 128], 16, 1, True
     else:

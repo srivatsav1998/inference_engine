@@ -38,7 +38,7 @@ def main():
         ctypes.c_uint32,
         ctypes.c_float
     ]
-    engine.generate.restype = None
+    engine.generate.restype = ctypes.c_int
 
     print("Initializing engine...")
     engine_ptr = engine.init_engine()
@@ -57,7 +57,7 @@ def main():
     c_out = (ctypes.c_uint32 * max_tokens)()
 
     print(f"Running greedy generation (prompt: '{prompt}')...")
-    engine.generate(
+    n = engine.generate(
         engine_ptr,
         c_prompt,
         len(prompt_ids),
@@ -68,7 +68,10 @@ def main():
         ctypes.c_float(0.95)
     )
 
-    out_list = list(c_out)
+    if n < 0:
+        print("Error: generate() returned -1")
+        sys.exit(1)
+    out_list = list(c_out)[:n]
     out_text = gpt2_tokenizer.decode(out_list)
     print(f"Generated text: '{out_text}'")
 
