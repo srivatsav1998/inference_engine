@@ -26,7 +26,7 @@ GPT-2 124M is small enough to iterate on quickly, yet structurally a full decode
 | `engine/models/` | GPT-2 weight structs, attention/MLP blocks, `KVCache`, sampling (greedy, temperature, top-k, top-p) |
 | `engine/engine.cpp`, `engineAPI.cpp` | Hand-written prefill + autoregressive decode loop; C-linkage API |
 | `frontend/`, `scripts/` | Python frontend; weight export, synthetic weight generation and verification |
-| `tests/` | doctest kernel unit tests; synthetic and real-weight greedy-decoding E2E regression tests |
+| `tests/` | doctest kernel unit tests (including a MatMul sweep over shapes, transposes and strided layouts against a double-precision reference); synthetic and real-weight greedy-decoding E2E regression tests |
 | `bench/` | Benchmark suite: kernels, memory bandwidth, E2E engine vs PyTorch ([details](./bench/README.md)) |
 
 ---
@@ -36,7 +36,7 @@ GPT-2 124M is small enough to iterate on quickly, yet structurally a full decode
 ```bash
 make weights          # download & export HuggingFace GPT-2 weights into bin/ (needs scripts/requirements.txt)
 
-make check            # debug build + C++ unit tests (2,179 assertions) + synthetic E2E test (~2 s)
+make check            # debug build + C++ unit tests (2,289 assertions) + synthetic E2E test (~2 s)
 make test             # C++ unit tests only
 make test_synthetic   # synthetic-weight greedy regression (no downloads; what CI runs)
 make test_full        # real GPT-2 greedy decoding regression (needs bin/ weights)
@@ -96,6 +96,7 @@ Earlier pre-harness numbers (cold-start wall-clock over a few tokens, plus peak 
 9. **Model dimensions are hardcoded:** `EMBEDDING_SIZE 768`, 12 layers.
 10. **Pointwise kernels reach only ≈1–4 GB/s.** They are scalar loops through `TensorView::operator()`. That costs well under 1 ms per decode step today, but it will show up as the MatMuls get faster.
 11. **The release build warns about unused variables** in `matMul2D_out` (`M`, `K_B`), because they are only used inside asserts.
+12. **`matMul2D_out` gives wrong results for a column-strided output** (`O.stride()[1] != 1`) in the non-transposed fast path. That path checks only `B`'s column stride, but stores 4 adjacent floats into `O`. No caller in the engine passes such an output today; the unit-test sweep excludes that layout until the kernel handles it.
 
 ---
 
