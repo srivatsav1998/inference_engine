@@ -26,7 +26,7 @@ GPT-2 124M is small enough to iterate on quickly, yet structurally a full decode
 | `engine/models/` | GPT-2 weight structs, attention/MLP blocks, `KVCache`, sampling (greedy, temperature, top-k, top-p) |
 | `engine/engine.cpp`, `engineAPI.cpp` | Hand-written prefill + autoregressive decode loop; C-linkage API |
 | `frontend/`, `scripts/` | Python frontend; weight export, synthetic weight generation and verification |
-| `tests/` | doctest kernel unit tests; synthetic and real-weight greedy-decoding E2E regression tests |
+| `tests/` | doctest kernel unit tests (including a MatMul sweep over shapes, transposes and strided layouts against a double-precision reference); synthetic and real-weight greedy-decoding E2E regression tests |
 | `bench/` | Benchmark suite: kernels, memory bandwidth, E2E engine vs PyTorch ([details](./bench/README.md)) |
 
 ---
@@ -36,7 +36,7 @@ GPT-2 124M is small enough to iterate on quickly, yet structurally a full decode
 ```bash
 make weights          # download & export HuggingFace GPT-2 weights into bin/ (needs scripts/requirements.txt)
 
-make check            # debug build + C++ unit tests (2,179 assertions) + synthetic E2E test (~2 s)
+make check            # debug build + C++ unit tests (2,289 assertions) + synthetic E2E test (~2 s)
 make test             # C++ unit tests only
 make test_synthetic   # synthetic-weight greedy regression (no downloads; what CI runs)
 make test_full        # real GPT-2 greedy decoding regression (needs bin/ weights)
@@ -51,22 +51,33 @@ make bench_quick      # quick benchmark (~30 s, no PyTorch baseline)
 
 ## Benchmarks
 
-Baseline on an Apple M2 (4P + 4E cores, 16 GB), release build, commit `f435414`. Raw data is in [`bench/results/20261114-173813-f435414.json`](./bench/results/20261114-173813-f435414.json) and the methodology in [`bench/README.md`](./bench/README.md).
+Apple M2 (4P + 4E cores, 16 GB), release build. Methodology is in [`bench/README.md`](./bench/README.md). Each row links to a committed results file.
+
+| Version | Results | Decode ms/tok | Decode tok/s | TTFT @128 (ms) | Prefill tok/s @128 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Baseline (`f435414`) | [json](./bench/results/20261114-173813-f435414.json) | 101.1 | 9.9 | 2839 | 45 |
+| MatMul pointer hoisting (`a468d5b`) | [json](./bench/results/20261114-234524-a468d5b.json) | 19.5 | 51.2 | 737 | 174 |
+| Dot-product path: 4 accumulators (`b60def8`) | [json](./bench/results/20261115-004124-b60def8.json) | **14.1** | **71.0** | **667** | **192** |
+| PyTorch 2.15 (HF, CPU) reference | latest json | 17.5 | 57.1 | 81 | 1580 |
+
+Current state (`b60def8`) at every prompt length:
 
 | Backend | Prompt | TTFT (ms) | Prefill tok/s | Decode ms/tok | Decode tok/s | Avg busy cores |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Engine | 8 | 196 | 41 | 101.1 | 9.9 | 1.1 |
-| Engine | 32 | 748 | 43 | 101.0 | 9.9 | 1.5 |
-| Engine | 128 | 2839 | 45 | 101.8 | 9.8 | 2.6 |
-| PyTorch 2.15 (HF, CPU) | 8 | 25 | 318 | 17.2 | 58.2 | 1.0 |
-| PyTorch 2.15 (HF, CPU) | 32 | 40 | 797 | 17.3 | 57.8 | 1.0 |
-| PyTorch 2.15 (HF, CPU) | 128 | 77 | 1653 | 17.9 | 55.9 | 1.1 |
+| Engine | 8 | 46 | 175 | 14.1 | 71.0 | 1.2 |
+| Engine | 32 | 158 | 202 | 14.3 | 69.7 | 1.6 |
+| Engine | 128 | 667 | 192 | 15.6 | 64.3 | 2.8 |
+| PyTorch 2.15 (HF, CPU) | 8 | 26 | 311 | 17.5 | 57.1 | 1.0 |
+| PyTorch 2.15 (HF, CPU) | 32 | 42 | 769 | 17.8 | 56.0 | 1.0 |
+| PyTorch 2.15 (HF, CPU) | 128 | 81 | 1580 | 18.3 | 54.7 | 1.1 |
 
-- **Decode floor:** each generated token streams all ≈498 MB of fp32 weights. At the measured 66.5 GB/s read bandwidth, that floor is ≈7.5 ms/token (≈134 tok/s). The engine reaches 7% of it; PyTorch reaches about 43%.
+- **Decode floor:** each generated token streams all ≈498 MB of fp32 weights. At the measured 64.8 GB/s read bandwidth, the floor is ≈7.7 ms/token (≈130 tok/s). The engine reaches 55% of it, up from 7% at baseline, and now decodes ≈20% faster than PyTorch (about 44%).
 - **Correctness:** the engine's greedy output matches PyTorch for all 65 generated tokens at every prompt length.
-- **Memory:** peak RSS is 639 MB for the engine and 903 MB for PyTorch.
-- **Kernel gap:** at decode shapes (M = 1), the engine's MatMul is 6.6–8.5× slower than Accelerate (`cblas_sgemm`). At prefill shapes (M = 32–128) it is 21–58× slower. Per-shape numbers are in the results JSON.
-- **These are baselines, not targets.** The point of the harness is to measure the effect of each roadmap item below.
+- **Memory:** peak RSS is 644 MB for the engine and 900 MB for PyTorch.
+- **Kernel gap vs Accelerate (`cblas_sgemm`):**
+  - All decode MatMuls (M = 1) are at or near parity: the projections are bandwidth-bound at ≈35–37 GB/s of weight streaming, and the LM head (`wte^T`) runs at ≈3.1 ms against Accelerate's ≈2.7 ms.
+  - At prefill shapes (M = 32–128) the projections are 3–8× slower, and the LM head is 6–19× slower (see Known Issues).
+- **These are measurements, not targets.** The harness exists to measure the effect of each roadmap item below.
 
 Earlier pre-harness numbers (cold-start wall-clock over a few tokens, plus peak activation footprint) are kept in [PROTOTYPE_ARCHIVE.md](./PROTOTYPE_ARCHIVE.md#historical-measurements).
 
@@ -74,16 +85,18 @@ Earlier pre-harness numbers (cold-start wall-clock over a few tokens, plus peak 
 
 ## Known Issues
 
-1. **Decode MatMul runs on one thread.** `matMul2D_out` splits work across output rows and skips the thread pool when there are ≤ 4 rows. Decode has M = 1, so every decode MatMul, including the 50,257-wide LM head, is single-threaded (≈1 busy core above).
-2. **The work split ignores P/E cores.** Rows are split into equal chunks across all 8 cores and the call waits for every chunk, so a chunk scheduled on a slower efficiency core delays the whole call.
-3. **Prefill computes logits for every prompt row**, but only the last row is used to pick the next token. At 128 tokens, the LM-head MatMul alone takes ≈570 ms of the ≈2.8 s TTFT.
-4. **The activation arena is a fixed 90 MB.** Prefill runs out of memory at about 192 prompt tokens: `ArenaAllocator::alloc` returns `nullptr` and the process crashes.
-5. **`TaskQueue` tracks completion with one global counter.** Two concurrent callers would each wait for the other's tasks as well, so the pool assumes a single caller at a time.
-6. **`LayerNormOp` stores `eps` and `SoftmaxOp` stores `axis`, but neither is passed to its kernel.**
-7. **`init_engine` returns an uninitialized pointer** if `Engine` construction throws.
-8. **Model dimensions are hardcoded:** `EMBEDDING_SIZE 768`, 12 layers.
-9. **Pointwise kernels reach only ≈1–4 GB/s.** They are scalar loops through `TensorView::operator()`.
-10. **The release build warns about unused variables** in `matMul2D_out` (`M`, `K_B`), because they are only used inside asserts.
+1. **Decode MatMul runs on one thread.** `matMul2D_out` splits work across output rows and skips the thread pool when there are ≤ 4 rows. Decode has M = 1, so every decode MatMul is single-threaded (≈1 busy core above). One core already streams weights at close to the chip's bandwidth here, so the remaining gain from threading decode is modest.
+2. **The transposed-B (dot-product) MatMul path re-streams `B` for every row.** At M > 1 it reads all 154 MB of `wte` once per row of `A` (the matrix doesn't fit in cache), so the prefill LM head's cost grows linearly with M: ≈250 ms at M = 128, against ≈13 ms for Accelerate.
+3. **The work split ignores P/E cores.** Rows are split into equal chunks across all 8 cores and the call waits for every chunk, so a chunk scheduled on a slower efficiency core delays the whole call.
+4. **Prefill computes logits for every prompt row**, but only the last row is used to pick the next token. At 128 tokens, the LM-head MatMul alone takes ≈250 ms of the ≈667 ms TTFT.
+5. **The activation arena is a fixed 90 MB.** Prefill runs out of memory at about 192 prompt tokens: `ArenaAllocator::alloc` returns `nullptr` and the process crashes.
+6. **`TaskQueue` tracks completion with one global counter.** Two concurrent callers would each wait for the other's tasks as well, so the pool assumes a single caller at a time.
+7. **`LayerNormOp` stores `eps` and `SoftmaxOp` stores `axis`, but neither is passed to its kernel.**
+8. **`init_engine` returns an uninitialized pointer** if `Engine` construction throws.
+9. **Model dimensions are hardcoded:** `EMBEDDING_SIZE 768`, 12 layers.
+10. **Pointwise kernels reach only ≈1–4 GB/s.** They are scalar loops through `TensorView::operator()`. That costs well under 1 ms per decode step today, but it will show up as the MatMuls get faster.
+11. **The release build warns about unused variables** in `matMul2D_out` (`M`, `K_B`), because they are only used inside asserts.
+12. **`matMul2D_out` gives wrong results for a column-strided output** (`O.stride()[1] != 1`) in the non-transposed fast path. That path checks only `B`'s column stride, but stores 4 adjacent floats into `O`. No caller in the engine passes such an output today; the unit-test sweep excludes that layout until the kernel handles it.
 
 ---
 

@@ -8,7 +8,11 @@
 
 #include <vector>
 #include <cmath>
+#include <limits>
 #include <numeric>
+#include <random>
+#include <sstream>
+#include <string>
 
 // ============================================================================
 // matMul2D & matMul2D_out Tests
@@ -224,6 +228,259 @@ TEST_CASE("matMul2D & matMul2D_out: Matrix Multiplication")
             for (size_t j = 0; j < N; ++j) {
                 CHECK(C(i, j) == doctest::Approx(expected).epsilon(1e-4f));
             }
+        }
+    }
+}
+
+// ============================================================================
+// matMul2D_out: exhaustive shape/layout sweep against a double-precision reference
+// ============================================================================
+//
+// Why this exists: the hand-written cases above pre-zero every output buffer,
+// call the kernel once, mostly use K < 4 for transposeB, and only use
+// contiguous tensors. So a kernel that forgets to clear its output, skips a
+// SIMD accumulator, or ignores a row stride still passes them. In the engine,
+// output buffers come from a reused arena and Q/K/V are `horSplit` views with
+// padded row strides.
+//
+// Every case here:
+//   - fills the output with NaN first, so any accumulation onto existing
+//     contents shows up as NaN (a kernel must fully overwrite its output);
+//   - surrounds each matrix with canary values and checks they are untouched,
+//     so out-of-bounds writes and writes into row padding are caught;
+//   - uses random, non-uniform data, so swapped rows/columns are caught;
+//   - sweeps K and N across the 16-wide / 4-wide / scalar-tail boundaries of
+//     the NEON loops, all transpose combinations, and three memory layouts
+//     (contiguous, padded rows like horSplit, column-strided -> general path).
+namespace
+{
+constexpr float kCanary = -12345.678f;
+
+enum class Layout
+{
+    Contiguous,  // row stride = cols, col stride = 1
+    PaddedRows,  // row stride = cols + 3, col stride = 1 (like a horSplit slice)
+    ColStrided,  // col stride = 2: not unit-stride, forces the general path
+};
+
+const char *layoutName(Layout l)
+{
+    switch (l)
+    {
+    case Layout::Contiguous: return "contiguous";
+    case Layout::PaddedRows: return "padded-rows";
+    case Layout::ColStrided: return "col-strided";
+    }
+    return "?";
+}
+
+// A rows x cols matrix with an explicit layout, surrounded by canary-filled guard cells.
+struct GuardedMatrix
+{
+    static constexpr size_t kGuard = 16;
+    size_t rows, cols, rowStride, colStride;
+    std::vector<float> storage;
+
+    GuardedMatrix(size_t r, size_t c, Layout layout) : rows(r), cols(c)
+    {
+        colStride = (layout == Layout::ColStrided) ? 2 : 1;
+        rowStride = (layout == Layout::PaddedRows) ? c + 3 : (layout == Layout::ColStrided ? 2 * c + 1 : c);
+        size_t span = (r - 1) * rowStride + (c - 1) * colStride + 1;
+        storage.assign(kGuard + span + kGuard, kCanary);
+    }
+
+    size_t offset(size_t r, size_t c) const { return kGuard + r * rowStride + c * colStride; }
+    float &at(size_t r, size_t c) { return storage[offset(r, c)]; }
+
+    TensorView view() { return TensorView(storage.data() + kGuard, {rows, cols}, {rowStride, colStride}, 0); }
+
+    void fillRandom(std::mt19937 &rng)
+    {
+        std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+        for (size_t r = 0; r < rows; ++r)
+            for (size_t c = 0; c < cols; ++c)
+                at(r, c) = dist(rng);
+    }
+
+    void fill(float v)
+    {
+        for (size_t r = 0; r < rows; ++r)
+            for (size_t c = 0; c < cols; ++c)
+                at(r, c) = v;
+    }
+
+    // True if every cell outside the logical matrix (guards + padding) still holds the canary.
+    bool canariesIntact() const
+    {
+        std::vector<bool> logical(storage.size(), false);
+        for (size_t r = 0; r < rows; ++r)
+            for (size_t c = 0; c < cols; ++c)
+                logical[offset(r, c)] = true;
+        for (size_t i = 0; i < storage.size(); ++i)
+            if (!logical[i] && storage[i] != kCanary)
+                return false;
+        return true;
+    }
+};
+
+struct MatMulCaseResult
+{
+    double maxRelErr;  // NaN if any output element is NaN
+    bool aIntact, bIntact, oIntact;
+};
+
+// Runs O = op(A) * op(B) for logical shapes [M, K] x [K, N] with the given layouts.
+MatMulCaseResult runMatMulCase(size_t M, size_t K, size_t N, bool tA, bool tB,
+                               Layout la, Layout lb, Layout lo, std::mt19937 &rng)
+{
+    // Stored shapes: A is [K, M] when transposed, B is [N, K] when transposed.
+    GuardedMatrix A(tA ? K : M, tA ? M : K, la);
+    GuardedMatrix B(tB ? N : K, tB ? K : N, lb);
+    GuardedMatrix O(M, N, lo);
+    A.fillRandom(rng);
+    B.fillRandom(rng);
+    O.fill(std::numeric_limits<float>::quiet_NaN());
+
+    TensorView vA = A.view(), vB = B.view(), vO = O.view();
+    matMul2D_out(vA, vB, vO, tA, tB);
+
+    double maxRelErr = 0.0;
+    for (size_t i = 0; i < M; ++i)
+    {
+        for (size_t n = 0; n < N; ++n)
+        {
+            double ref = 0.0;
+            for (size_t k = 0; k < K; ++k)
+            {
+                double a = tA ? A.at(k, i) : A.at(i, k);
+                double b = tB ? B.at(n, k) : B.at(k, n);
+                ref += a * b;
+            }
+            double got = O.at(i, n);
+            double err = std::fabs(got - ref) / (1.0 + std::fabs(ref));
+            if (std::isnan(got))
+                err = std::numeric_limits<double>::quiet_NaN();
+            if (std::isnan(err) || err > maxRelErr)
+                maxRelErr = err;
+            if (std::isnan(maxRelErr))
+                break;
+        }
+    }
+    return {maxRelErr, A.canariesIntact(), B.canariesIntact(), O.canariesIntact()};
+}
+
+// Sweeps every shape for one (transpose, layout) combination and returns a description of
+// the first failing case, or an empty string if all pass. One assertion per combination keeps
+// failure output readable and the assertion count meaningful.
+template <size_t NM, size_t NK, size_t NN>
+std::string sweepShapes(const size_t (&Ms)[NM], const size_t (&Ks)[NK], const size_t (&Ns)[NN],
+                        bool tA, bool tB, Layout la, Layout lb, Layout lo, std::mt19937 &rng)
+{
+    for (size_t M : Ms)
+        for (size_t K : Ks)
+            for (size_t N : Ns)
+            {
+                auto r = runMatMulCase(M, K, N, tA, tB, la, lb, lo, rng);
+                const char *what = nullptr;
+                if (!(r.maxRelErr <= 1e-4)) // also catches NaN: output not fully overwritten
+                    what = "wrong values";
+                else if (!r.oIntact)
+                    what = "wrote outside output (guard cells / row padding)";
+                else if (!r.aIntact || !r.bIntact)
+                    what = "modified an input";
+                if (what)
+                {
+                    std::ostringstream os;
+                    os << what << " at M=" << M << " K=" << K << " N=" << N << " transposeA=" << tA
+                       << " transposeB=" << tB << " A=" << layoutName(la) << " B=" << layoutName(lb)
+                       << " O=" << layoutName(lo) << " (max rel err " << r.maxRelErr << ")";
+                    return os.str();
+                }
+            }
+    return "";
+}
+} // namespace
+
+TEST_CASE("matMul2D_out: shape/layout sweep vs reference (single-threaded, M <= 4)")
+{
+    std::mt19937 rng(1234);
+    // K/N values straddle the 16-wide, 4-wide and scalar-tail loop boundaries.
+    const size_t Ms[] = {1, 2, 3, 4};
+    const size_t Ks[] = {1, 3, 4, 5, 8, 15, 16, 17, 20, 23, 37};
+    const size_t Ns[] = {1, 2, 3, 4, 5, 7, 8, 16, 21};
+    const Layout inLayouts[] = {Layout::Contiguous, Layout::PaddedRows, Layout::ColStrided};
+    // Layout::ColStrided is deliberately excluded for the OUTPUT: the non-transposed NEON fast
+    // path checks only B's column stride and stores 4 adjacent floats, so a column-strided O
+    // gives wrong results (README Known Issues). Add it here once the kernel guards O's stride.
+    const Layout outLayouts[] = {Layout::Contiguous, Layout::PaddedRows};
+
+    for (bool tA : {false, true})
+        for (bool tB : {false, true})
+            for (Layout la : inLayouts)
+                for (Layout lb : inLayouts)
+                    for (Layout lo : outLayouts)
+                    {
+                        std::string failure = sweepShapes(Ms, Ks, Ns, tA, tB, la, lb, lo, rng);
+                        INFO(failure);
+                        CHECK(failure.empty());
+                    }
+}
+
+TEST_CASE("matMul2D_out: shape/layout sweep vs reference (multi-threaded, M > 4)")
+{
+    std::mt19937 rng(5678);
+    // M values exercise uneven per-thread row chunks; GPT-2-like K = 768 hits all NEON loops.
+    const size_t Ms[] = {5, 9, 32, 37};
+    const size_t Ks[] = {17, 64, 768};
+    const size_t Ns[] = {7, 64, 67};
+    const Layout layouts[] = {Layout::Contiguous, Layout::PaddedRows};
+
+    for (bool tA : {false, true})
+        for (bool tB : {false, true})
+            for (Layout la : layouts)
+                for (Layout lb : layouts)
+                    for (Layout lo : layouts)
+                    {
+                        std::string failure = sweepShapes(Ms, Ks, Ns, tA, tB, la, lb, lo, rng);
+                        INFO(failure);
+                        CHECK(failure.empty());
+                    }
+}
+
+TEST_CASE("matMul2D_out: repeated calls into a reused (dirty) output buffer")
+{
+    // Mirrors the engine: the arena is reset every step, so a kernel's output buffer
+    // still holds the previous step's activations. Results must not depend on them.
+    std::mt19937 rng(42);
+    for (bool tB : {false, true})
+    {
+        for (size_t M : {1, 3, 8})
+        {
+            const size_t K = 37, N = 21;
+            GuardedMatrix A(M, K, Layout::Contiguous);
+            GuardedMatrix B(tB ? N : K, tB ? K : N, Layout::Contiguous);
+            GuardedMatrix O(M, N, Layout::Contiguous);
+            A.fillRandom(rng);
+            B.fillRandom(rng);
+            TensorView vA = A.view(), vB = B.view(), vO = O.view();
+
+            O.fill(0.0f);
+            matMul2D_out(vA, vB, vO, false, tB);
+            std::vector<float> first;
+            for (size_t i = 0; i < M; ++i)
+                for (size_t n = 0; n < N; ++n)
+                    first.push_back(O.at(i, n));
+
+            O.fillRandom(rng); // stale garbage, as left behind by a previous step
+            matMul2D_out(vA, vB, vO, false, tB);
+
+            INFO("M=" << M << " transposeB=" << tB);
+            size_t idx = 0;
+            bool identical = true;
+            for (size_t i = 0; i < M; ++i)
+                for (size_t n = 0; n < N; ++n)
+                    identical = identical && (O.at(i, n) == first[idx++]);
+            CHECK(identical);
         }
     }
 }

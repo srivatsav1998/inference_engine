@@ -41,37 +41,63 @@ void matMul2D_out(const TensorView &A, const TensorView &B, TensorView &O, bool 
             // Fast contiguous NEON path
             for (size_t i = startI; i < endI; ++i)
             {
+                float *a_base = &A(i, 0);
+                size_t a_stride = A.stride()[1];
+
+                float *o_base = &O(i, 0);
+                size_t o_stride = O.stride()[1];
+
                 for (size_t j = 0; j < K; ++j)
                 {
-                    float32x4_t a_vec = vld1q_dup_f32(&A(i, j));
+                    float *a_pos = a_base + a_stride * j;
+                    float32x4_t a_vec = vld1q_dup_f32(a_pos);
                     size_t k = 0;
+
+                    float *b_base = &B(j, k);
+                    size_t b_stride = B.stride()[1];
+
+                    if (j == 0)
+                    {
+                        float *o_pos;
+                        size_t k = 0;
+                        for (; k + 4 <= N; k += 4)
+                        {
+                            o_pos = o_base + o_stride * k;
+                            float32x4_t temp = vdupq_n_f32(0.0f);
+                            vst1q_f32(o_pos, temp);
+                        }
+
+                        for (; k < N; ++k)
+                        {
+                            o_pos = o_base + o_stride * k;
+                            *o_pos = 0;
+                        }
+                    }
+
                     for (; k + 4 <= N; k += 4)
                     {
-                        float32x4_t b_vec = vld1q_f32(&B(j, k));
+                        float *b_pos = b_base + b_stride * k;
+                        float32x4_t b_vec = vld1q_f32(b_pos);
+
+                        float *o_pos = o_base + o_stride * k;
+
+                        float32x4_t o_vec = vld1q_f32(o_pos);
+                        o_vec = vmlaq_f32(o_vec, a_vec, b_vec);
+                        vst1q_f32(o_pos, o_vec);
+                    }
+
+                    for (; k < N; ++k)
+                    {
+                        float *o_pos = o_base + o_stride * k;
+                        float *b_pos = b_base + b_stride * k;
 
                         if (j == 0)
                         {
-                            float32x4_t temp = vdupq_n_f32(0.0f);
-                            vst1q_f32(&O(i, k), temp);
+                            *o_pos = *a_pos * *b_pos;
                         }
-
-                        float32x4_t o_vec = vld1q_f32(&O(i, k));
-                        o_vec = vmlaq_f32(o_vec, a_vec, b_vec);
-                        vst1q_f32(&O(i, k), o_vec);
-                    }
-
-                    if (N % 4 != 0)
-                    {
-                        for (; k < N; ++k)
+                        else
                         {
-                            if (j == 0)
-                            {
-                                O(i, k) = A(i, j) * B(j, k);
-                            }
-                            else
-                            {
-                                O(i, k) += A(i, j) * B(j, k);
-                            }
+                            *o_pos += *a_pos * *b_pos;
                         }
                     }
                 }
@@ -83,24 +109,76 @@ void matMul2D_out(const TensorView &A, const TensorView &B, TensorView &O, bool 
             // O(i, k) = dot_product(row i of A, row k of B) over K elements
             for (size_t i = startI; i < endI; ++i)
             {
+                float *o_base = &O(i, 0);
+                size_t o_stride = O.stride()[1];
+
                 for (size_t k = 0; k < N; ++k)
                 {
                     float sum = 0.0f;
                     size_t j = 0;
-                    float32x4_t acc = vdupq_n_f32(0.0f);
+
+                    float *a_base = &A(i, j);
+                    size_t a_stride = A.stride()[1];
+
+                    float *b_base = &B(k, j);
+                    size_t b_stride = B.stride()[1];
+
+                    float32x4_t acc0 = vdupq_n_f32(0.0f);
+                    float32x4_t acc1 = vdupq_n_f32(0.0f);
+                    float32x4_t acc2 = vdupq_n_f32(0.0f);
+                    float32x4_t acc3 = vdupq_n_f32(0.0f);
+                    for (; j + 16 <= K; j += 16)
+                    {
+                        float *a_pos = a_base + a_stride * j;
+                        float *b_pos = b_base + b_stride * j;
+
+                        float32x4_t a_vec = vld1q_f32(a_pos);
+                        float32x4_t b_vec = vld1q_f32(b_pos);
+                        acc0 = vmlaq_f32(acc0, a_vec, b_vec);
+
+                        a_pos += 4;
+                        b_pos += 4;
+
+                        a_vec = vld1q_f32(a_pos);
+                        b_vec = vld1q_f32(b_pos);
+                        acc1 = vmlaq_f32(acc1, a_vec, b_vec);
+
+                        a_pos += 4;
+                        b_pos += 4;
+
+                        a_vec = vld1q_f32(a_pos);
+                        b_vec = vld1q_f32(b_pos);
+                        acc2 = vmlaq_f32(acc2, a_vec, b_vec);
+
+                        a_pos += 4;
+                        b_pos += 4;
+
+                        a_vec = vld1q_f32(a_pos);
+                        b_vec = vld1q_f32(b_pos);
+                        acc3 = vmlaq_f32(acc3, a_vec, b_vec);
+                    }
+
                     for (; j + 4 <= K; j += 4)
                     {
-                        float32x4_t a_vec = vld1q_f32(&A(i, j));
-                        float32x4_t b_vec = vld1q_f32(&B(k, j));
-                        acc = vmlaq_f32(acc, a_vec, b_vec);
+                        float *a_pos = a_base + a_stride * j;
+                        float *b_pos = b_base + b_stride * j;
+
+                        float32x4_t a_vec = vld1q_f32(a_pos);
+                        float32x4_t b_vec = vld1q_f32(b_pos);
+                        acc0 = vmlaq_f32(acc0, a_vec, b_vec);
                     }
-                    sum = vaddvq_f32(acc);
+
+                    sum = vaddvq_f32(acc0) + vaddvq_f32(acc1) + vaddvq_f32(acc2) + vaddvq_f32(acc3);
 
                     for (; j < K; ++j)
                     {
-                        sum += A(i, j) * B(k, j);
+                        float *a_pos = a_base + a_stride * j;
+                        float *b_pos = b_base + b_stride * j;
+                        sum += *a_pos * *b_pos;
                     }
-                    O(i, k) = sum;
+
+                    float *o_pos = o_base + o_stride * k;
+                    *o_pos = sum;
                 }
             }
         }
@@ -109,19 +187,50 @@ void matMul2D_out(const TensorView &A, const TensorView &B, TensorView &O, bool 
             // General path (transposeA, or arbitrary non-contiguous strides)
             for (size_t i = startI; i < endI; ++i)
             {
+                float *a_base;
+                size_t a_stride;
+                if (transposeA)
+                {
+                    a_base = &A(0, i);
+                    a_stride = A.stride()[0];
+                }
+                else
+                {
+                    a_base = &A(i, 0);
+                    a_stride = A.stride()[1];
+                }
+
                 for (size_t j = 0; j < K; ++j)
                 {
-                    float a_val = transposeA ? A(j, i) : A(i, j);
+                    float *a_pos = a_base + a_stride * j;
+
+                    float *b_base;
+                    size_t b_stride;
+                    if (transposeB)
+                    {
+                        b_base = &B(0, j);
+                        b_stride = B.stride()[0];
+                    }
+                    else
+                    {
+                        b_base = &B(j, 0);
+                        b_stride = B.stride()[1];
+                    }
+
+                    float *o_base = &O(i, 0);
+                    size_t o_stride = O.stride()[1];
+
                     for (size_t k = 0; k < N; ++k)
                     {
-                        float b_val = transposeB ? B(k, j) : B(j, k);
+                        float *b_pos = b_base + b_stride * k;
+                        float *o_val = o_base + o_stride * k;
                         if (j == 0)
                         {
-                            O(i, k) = a_val * b_val;
+                            *o_val = *a_pos * *b_pos;
                         }
                         else
                         {
-                            O(i, k) += a_val * b_val;
+                            *o_val += *a_pos * *b_pos;
                         }
                     }
                 }

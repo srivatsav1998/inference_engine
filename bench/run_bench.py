@@ -131,6 +131,15 @@ def derive(report):
         report["derived"]["greedy_agreement_vs_torch"] = checks
 
 
+def ratio_label(ratio):
+    """Engine time / Accelerate time, phrased in the direction that is true."""
+    if not ratio:
+        return "–"
+    if 0.95 <= ratio <= 1.05:
+        return "≈ parity"
+    return f"{ratio:.1f}× slower" if ratio > 1 else f"{1 / ratio:.1f}× faster"
+
+
 def markdown(report):
     lines = []
     hw, b = report["hardware"], report["build"]
@@ -176,7 +185,7 @@ def markdown(report):
             acc_ms = f"{r['accelerate_ms']:.3f}" if r.get("accelerate_ms") else "–"
             acc_gf = f"{r['accelerate_gflops']:.1f}" if r.get("accelerate_gflops") else "–"
             lines.append(f"| {r['op']} | {r['M']}×{r['K']}×{r['N']} | {r['engine_ms']:.3f} | {r['engine_gflops']:.1f} | "
-                         f"{acc_ms} | {acc_gf} | {f'{ratio:.1f}× slower' if ratio else '–'} |")
+                         f"{acc_ms} | {acc_gf} | {ratio_label(ratio)} |")
         bw = ", ".join(f"{x['threads']} thr: {x['gbps']:.1f} GB/s" for x in k["read_bandwidth"])
         lines.append(f"\nMeasured read bandwidth — {bw}.")
     return "\n".join(lines)
