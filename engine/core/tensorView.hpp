@@ -4,9 +4,15 @@
 #include <memory>
 #include <cassert>
 
+namespace tensorview::types
+{
+    using TensorShape = std::vector<size_t>;
+    using TensorStride = std::vector<size_t>;
+};
+
 class TensorView
 {
-    float *data_;                 // true non-owning implementation
+    float *data_ = nullptr;       // true non-owning implementation
     std::vector<size_t> shape_;   // n-dimensional array
     std::vector<size_t> strides_; // should match the shape
 
@@ -33,6 +39,11 @@ public:
         }
 
         return data_[flat_offset];
+    }
+
+    operator bool()
+    {
+        return data_ != nullptr ? true : false;
     }
 
     [[nodiscard]] size_t ndim(void) const;

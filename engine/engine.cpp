@@ -32,9 +32,12 @@ TensorView embedTokens(std::vector<size_t> tokenIds, TensorView &wpe, TensorView
     return result;
 }
 
-Engine::Engine(const char *modelWeightsPath, const char *modelConfigPath) : loader_(modelWeightsPath)
+Engine::Engine(const char *modelWeightsPath, const char *modelConfigPath)
 {
-    model_ = buildModel(loader_, modelConfigPath);
+    loader_.mount(modelWeightsPath);
+    json modelConfig = loadModelConfig(modelConfigPath);
+
+    model_ = buildModel(loader_, modelConfig);
 }
 
 size_t Engine::stepArenaBytes(size_t rows, size_t contextLen) const

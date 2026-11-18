@@ -1,6 +1,6 @@
 #pragma once
 
-#include "modelWeightsLoader.hpp"
+#include "modelWeightMap.hpp"
 #include "arenaAllocator.hpp"
 #include "GPT2Model.hpp"
 
@@ -25,7 +25,7 @@ private:
 
     void validateRequest(const std::vector<size_t> &prompt, unsigned int maxTokens) const;
 
-    ModelWeightsLoader loader_;
+    ModelWeightMap loader_;
     ArenaAllocator arena_;
     GPT2Model model_;
 };

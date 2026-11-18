@@ -2,10 +2,16 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <iostream>
-#include "modelWeightsLoader.hpp"
 
-ModelWeightsLoader::ModelWeightsLoader(const char *filePath)
+#include "modelWeightMap.hpp"
+
+void ModelWeightMap::mount(const char *filePath)
 {
+    if (file_memory != nullptr)
+    {
+        throw std::logic_error("Cannot call mount on an already mounted weight map");
+    }
+
     fd = open(filePath, O_RDONLY);
     // check for validity of file descriptor
     if (fd < 0)
@@ -44,7 +50,7 @@ ModelWeightsLoader::ModelWeightsLoader(const char *filePath)
     close(fd);
 }
 
-ModelWeightsLoader::~ModelWeightsLoader()
+void ModelWeightMap::unmount()
 {
     if (file_memory != nullptr)
     {
@@ -56,7 +62,12 @@ ModelWeightsLoader::~ModelWeightsLoader()
     }
 }
 
-float *ModelWeightsLoader::operator*() const
+ModelWeightMap::~ModelWeightMap()
+{
+    unmount();
+}
+
+float *ModelWeightMap::operator*() const
 {
     return file_memory;
 }

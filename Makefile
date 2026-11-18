@@ -8,7 +8,7 @@ ifneq ($(wildcard $(BREW_JSON_INC)),)
 endif
 
 # Expose engine headers
-CXXFLAGS += -Iengine -Iengine/core -Iengine/ops -Iengine/models
+CXXFLAGS += -Iengine -Iengine/core -Iengine/ops -Iengine/models -Iengine/graph
 
 BIN_DIR  := bin
 

@@ -1,7 +1,7 @@
 
 #include "engineHelpers.hpp"
 #include "GPT2Model.hpp"
-#include "modelWeightsLoader.hpp"
+#include "modelWeightMap.hpp"
 
 #include <fstream>
 #include <iostream>
@@ -18,11 +18,9 @@ json loadModelConfig(const char *filePath)
     return json::parse(configFile);
 }
 
-GPT2Model buildModel(const ModelWeightsLoader &modelWeights, const char *configFilePath)
+GPT2Model buildModel(const ModelWeightMap &modelWeights, const json &modelConfig)
 {
     GPT2Model model;
-
-    auto modelConfig = loadModelConfig(configFilePath);
 
     // Token and positional embeddings;
     json wte_data = modelConfig["wte.weight"];
@@ -31,8 +29,8 @@ GPT2Model buildModel(const ModelWeightsLoader &modelWeights, const char *configF
     model.wpe_weight = TensorView(*modelWeights, wpe_data["shape"], wpe_data["byte_offset"]);
 
     // Transformer layers
-    model.layers.resize(12);
-    for (int i = 0; i < 12; i++)
+    model.layers.resize(NUM_ATTENTION_HEADS);
+    for (int i = 0; i < NUM_ATTENTION_HEADS; i++)
     {
         // Attention LayerNorm
         json ln_1_weight = modelConfig["h." + std::to_string(i) + ".ln_1.weight"];
