@@ -44,7 +44,7 @@ int generate(void *enginePtr, unsigned int *prompt, unsigned int prompt_len, uns
     }
 
     Engine *engine = static_cast<Engine *>(enginePtr);
-    std::vector<size_t> prompt_(prompt, prompt + prompt_len);
+    std::vector<float> prompt_(prompt, prompt + prompt_len);
 
     // Exceptions must not cross the C boundary into the caller (ctypes would abort the process).
     try

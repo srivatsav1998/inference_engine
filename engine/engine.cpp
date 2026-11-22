@@ -35,9 +35,8 @@ TensorView embedTokens(std::vector<size_t> tokenIds, TensorView &wpe, TensorView
 Engine::Engine(const char *modelWeightsPath, const char *modelConfigPath)
 {
     loader_.mount(modelWeightsPath);
-    json modelConfig = loadModelConfig(modelConfigPath);
-
-    model_ = buildModel(loader_, modelConfig);
+    modelConfig_ = loadModelConfig(modelConfigPath);
+    weights_ = loadWeights(loader_, modelConfig_);
 }
 
 size_t Engine::stepArenaBytes(size_t rows, size_t contextLen) const
@@ -67,7 +66,7 @@ size_t Engine::stepArenaBytes(size_t rows, size_t contextLen) const
     return total;
 }
 
-void Engine::validateRequest(const std::vector<size_t> &prompt, unsigned int maxTokens) const
+void Engine::validateRequest(const std::vector<float> &prompt, unsigned int maxTokens) const
 {
     const size_t contextLimit = model_.wpe_weight.shape()[0]; // 1024 positions for GPT-2
     const size_t vocab = model_.wte_weight.shape()[0];
@@ -83,8 +82,10 @@ void Engine::validateRequest(const std::vector<size_t> &prompt, unsigned int max
             throw std::invalid_argument("token id " + std::to_string(token) + " is outside the vocabulary (" + std::to_string(vocab) + ")");
 }
 
-size_t Engine::infer(std::vector<size_t> &prompt, unsigned int *response, unsigned int maxTokens, float temperature, size_t topK, float topP)
+size_t Engine::infer(std::vector<float> &prompt, unsigned int *response, unsigned int maxTokens, float temperature, size_t topK, float topP)
 {
+    model_ = buildModelGraph(prompt, loader_, modelConfig_);
+
     validateRequest(prompt, maxTokens);
 
     // Size the arena for this request before touching `response`. The peak step is either the

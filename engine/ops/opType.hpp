@@ -20,6 +20,11 @@ enum class OpType : uint8_t
 // Baked Invariant Attribute Schemas
 // ============================================================================
 
+struct EmbeddingAttrs
+{
+    bool prefillPhase = false;
+};
+
 struct LayerNormAttrs
 {
     float eps = 1e-5f;
@@ -49,6 +54,7 @@ struct MatMulAttrs
 // Union of baked operator attributes (POD, fixed-size, zero heap allocation)
 union OpAttrs
 {
+    EmbeddingAttrs embed;
     LayerNormAttrs layerNorm;
     EleMulAttrs eleMul;
     SoftmaxAttrs softmax;

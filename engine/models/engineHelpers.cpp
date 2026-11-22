@@ -18,7 +18,7 @@ json loadModelConfig(const char *filePath)
     return json::parse(configFile);
 }
 
-GPT2Model buildModel(const ModelWeightMap &modelWeights, const json &modelConfig)
+GPT2Model loadWeights(const ModelWeightMap &modelWeights, const json &modelConfig)
 {
     GPT2Model model;
 
@@ -72,4 +72,46 @@ GPT2Model buildModel(const ModelWeightMap &modelWeights, const json &modelConfig
     model.ln_f_bias = TensorView(*modelWeights, {1, ln_f_bias_data["shape"][0]}, ln_f_bias_data["byte_offset"]);
 
     return model;
+}
+
+OperationNode addEmbeddingLayer(TensorView &input_t, TensorView &wte_t, TensorView &wpe_t, std::shared_ptr<ValueNode> &out, bool prefillPhase)
+{
+    auto input = std::make_shared<ValueNode>(input_t);
+    auto wte = std::make_shared<ValueNode>(wte_t);
+    auto wpe = std::make_shared<ValueNode>(wpe_t);
+
+    Values op_inputs{input, wte, wpe};
+    Values op_outs{out};
+
+    OpAttrs attrs;
+    attrs.embed.prefillPhase = prefillPhase;
+
+    return OperationNode(op_inputs, op_inputs, OpType::Embedding, attrs);
+}
+
+std::vector<OperationNode> buildModelGraph(std::vector<float> &prompt, const GPT2Model &modelWeights, bool prefillPhase)
+{
+    /////////////////  EMBEDDDING LAYER /////////////////
+    // tensors
+    auto wte_t = std::make_shared<TensorView>(modelWeights.wte_weight);
+    auto wpe_t = std::make_shared<TensorView>(modelWeights.wpe_weight);
+    auto input_t = std::make_shared<TensorView>(prompt.data(), std::vector<size_t>{1, prompt.size()}, 0);
+
+    auto embedding
+
+        // ValueNodes
+        auto input = std::make_shared<ValueNode>(input_t);
+    auto wte = std::make_shared<ValueNode>(wte_t);
+    auto wpe = std::make_shared<ValueNode>(wpe_t);
+
+    Values op_inputs{input, wte, wpe};
+
+    TensorShape embeddings_out_shape{prompt.size(), EMBEDDING_SIZE};
+    auto bytesRequired = sizeof(float) * embeddings_out_shape[0] * embeddings_out_shape[1];
+
+    auto embeddings_out = std::make_shared<ValueNode>(bytesRequired, embeddings_out_shape);
+    Values op_outs{embeddings_out};
+    OpAttrs attrs;
+    attrs.embed.prefillPhase = prefillPhase;
+    OperationNode embedding(op_inputs, op_outs, OpType::Embedding, attrs);
 }

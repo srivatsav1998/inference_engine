@@ -41,7 +41,7 @@ public:
         return data_[flat_offset];
     }
 
-    operator bool()
+    explicit operator bool() const noexcept
     {
         return data_ != nullptr ? true : false;
     }
