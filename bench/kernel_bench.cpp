@@ -34,6 +34,10 @@
 #include <Accelerate/Accelerate.h>
 #endif
 
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#endif
+
 namespace
 {
 
@@ -78,6 +82,19 @@ std::vector<float> randomBuffer(size_t n, uint32_t seed)
 // ---------------------------------------------------------------------------
 // 1. Memory read bandwidth
 // ---------------------------------------------------------------------------
+// Performance-core count, for the middle step of the thread sweep. Where the OS does not report
+// one (anything but macOS here), falls back to half the hardware threads.
+unsigned performanceCoreCount(unsigned hw)
+{
+#ifdef __APPLE__
+    int count = 0;
+    size_t len = sizeof(count);
+    if (sysctlbyname("hw.perflevel0.physicalcpu", &count, &len, nullptr, 0) == 0 && count > 0)
+        return static_cast<unsigned>(count);
+#endif
+    return std::max(1u, hw / 2);
+}
+
 float neonSum(const float *p, size_t n)
 {
     float32x4_t a0 = vdupq_n_f32(0), a1 = vdupq_n_f32(0), a2 = vdupq_n_f32(0), a3 = vdupq_n_f32(0);
@@ -275,7 +292,7 @@ int main(int argc, char **argv)
     const size_t bwBytes = gQuick ? (512ull << 20) : (1024ull << 20);
     std::vector<float> bwBuf = randomBuffer(bwBytes / sizeof(float), 3);
     std::vector<std::pair<unsigned, double>> bw;
-    std::vector<unsigned> threadCounts{1, std::max(1u, hw / 2), hw};
+    std::vector<unsigned> threadCounts{1, performanceCoreCount(hw), hw};
     threadCounts.erase(std::unique(threadCounts.begin(), threadCounts.end()), threadCounts.end());
     for (unsigned t : threadCounts)
     {

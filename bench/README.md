@@ -13,7 +13,7 @@ Both targets build the engine with `BUILD=release` (`-O3 -DNDEBUG`, so asserts a
 
 | Component | File | What it reports |
 | --- | --- | --- |
-| Memory bandwidth | `kernel_bench.cpp` | STREAM-style NEON read over 1 GiB with 1, P-core-count, and all threads. This is the ceiling for weight-streaming decode. |
+| Memory bandwidth | `kernel_bench.cpp` | STREAM-style NEON read over 1 GiB with 1, P-core-count, and all threads (threads are not pinned; where the P-core count is unavailable, half the threads is used). This is the ceiling for weight-streaming decode. |
 | MatMul kernels | `kernel_bench.cpp` | `matMul2D_out` vs Accelerate `cblas_sgemm` (which uses AMX) at every GPT-2 projection shape, for M = 1 (decode), 32 and 128 (prefill). Reports ms, GFLOP/s, weight GB/s and max abs diff. |
 | Pointwise kernels | `kernel_bench.cpp` | LayerNorm, GELU, Softmax, Add at decode and prefill shapes (µs, GB/s). |
 | End-to-end | `e2e_bench.py` | Engine (through the C API) and PyTorch/HF GPT-2 on identical token IDs. Reports TTFT, prefill tok/s, decode ms/tok, avg busy cores, first (cold) call time, peak RSS, and the generated tokens. |
