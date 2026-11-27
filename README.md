@@ -51,7 +51,9 @@ make bench_quick      # quick benchmark (~30 s, no PyTorch baseline)
 
 ## Benchmarks
 
-Apple M2 (4P + 4E cores, 16 GB), release build. Methodology is in [`bench/README.md`](./bench/README.md). Each row links to a committed results file.
+Release builds, measured on two machines. Methodology is in [`bench/README.md`](./bench/README.md). Each results link is a committed JSON file.
+
+### Apple M2 (4P + 4E cores, 16 GB): optimization history
 
 | Version | Results | Decode ms/tok | Decode tok/s | TTFT @128 (ms) | Prefill tok/s @128 |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -80,15 +82,46 @@ Current state (`7845889`) at every prompt length:
   - At prefill shapes (M = 32–128) the projections are 3–9× slower, and the LM head is 5–15× slower (see Known Issues).
 - **These are measurements, not targets.** The harness exists to measure the effect of each roadmap item below.
 
+### Mac Studio, Apple M1 Max (8P + 2E cores, 32 GB)
+
+Engine code identical to `7845889` (run at `88d6fc0`), same OS, compiler and PyTorch version as the latest M2 run. [Results JSON](./bench/results/20261127-171939-88d6fc0.json).
+
+| Backend | Prompt | TTFT (ms) | Prefill tok/s | Decode ms/tok | Decode tok/s | Avg busy cores |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Engine | 8 | 43 | 184 | 14.7 | 68.2 | 1.1 |
+| Engine | 32 | 95 | 338 | 14.9 | 67.1 | 1.3 |
+| Engine | 128 | 403 | 318 | 15.7 | 63.9 | 2.0 |
+| PyTorch 2.15 (HF, CPU) | 8 | 25 | 316 | 26.4 | 37.9 | 1.1 |
+| PyTorch 2.15 (HF, CPU) | 32 | 37 | 868 | 26.9 | 37.1 | 1.1 |
+| PyTorch 2.15 (HF, CPU) | 128 | 50 | 2549 | 27.2 | 36.7 | 1.1 |
+
+Side by side:
+
+| Metric | M2 | M1 Max |
+| --- | ---: | ---: |
+| Read bandwidth, 1 thread (GB/s) | 62.3 | 61.1 |
+| Read bandwidth, P-core-count threads (GB/s) | 65.5 (4) | 118.9 (8) |
+| Read bandwidth, best measured (GB/s) | 65.5 | 124.1 |
+| Decode floor (ms/token) | 7.6 | 4.0 |
+| Engine decode, prompt 8 (ms/token) | 14.0 | 14.7 |
+| Engine TTFT @128 (ms) | 450 | 403 |
+| LM head kernel, M = 128 (ms): engine / Accelerate | 196 / 13.0 | 91 / 7.1 |
+
+- **Decode does not benefit from the extra bandwidth.** Decode MatMuls run on one thread, and single-thread read bandwidth is about the same on both chips. The engine reaches 27% of the M1 Max floor, against 54% on the M2.
+- **Against PyTorch:** the engine generates ≈80% more tokens/s in decode, mostly because PyTorch decodes slower here than on the M2 (26.4 vs 17.7 ms/token; cause not investigated), while PyTorch's TTFT is lower at every prompt length (50 ms against 403 ms at 128 tokens).
+- **Correctness:** the engine's greedy output matches PyTorch for all 65 generated tokens at every prompt length.
+- **Memory:** peak RSS is 626 MB for the engine and 911 MB for PyTorch.
+- **Kernel gap vs Accelerate:** at M = 1 the engine ranges from 1.5× slower to 1.4× faster. At M = 32 the projections and LM head are 2.4–3.7× slower, and at M = 128 they are 9–13× slower.
+
 Earlier pre-harness numbers (cold-start wall-clock over a few tokens, plus peak activation footprint) are kept in [PROTOTYPE_ARCHIVE.md](./PROTOTYPE_ARCHIVE.md#historical-measurements).
 
 ---
 
 ## Known Issues
 
-1. **Decode MatMul runs on one thread.** `matMul2D_out` splits work across output rows and skips the thread pool when there are ≤ 4 rows. Decode has M = 1, so every decode MatMul is single-threaded (≈1 busy core above). One core already streams weights at close to the chip's bandwidth here, so the remaining gain from threading decode is modest.
-2. **The transposed-B (dot-product) MatMul path re-streams `B` for every row.** At M > 1 it reads all of `B` once per row of `A`, which is costly whenever `B` doesn't fit in cache: the LM head kernel benchmark (154 MB `wte`) takes ≈196 ms at M = 128, against ≈13 ms for Accelerate. The engine no longer hits this at M > 1 with a large `B`: the LM head now runs at M = 1, and the only other transposed-B call is the attention `Q·Kᵀ` score MatMul, whose `B` (`K`, at most 1024 × 64 floats per head) fits in cache.
-3. **The work split ignores P/E cores.** Rows are split into equal chunks across all 8 cores and the call waits for every chunk, so a chunk scheduled on a slower efficiency core delays the whole call.
+1. **Decode MatMul runs on one thread.** `matMul2D_out` splits work across output rows and skips the thread pool when there are ≤ 4 rows. Decode has M = 1, so every decode MatMul is single-threaded (≈1 busy core above). How much this costs depends on the chip: on the M2 one thread already reads at close to the best measured bandwidth (62 of 66 GB/s), but on the M1 Max it reads at less than half of it (61 of 124 GB/s).
+2. **The transposed-B (dot-product) MatMul path re-streams `B` for every row.** At M > 1 it reads all of `B` once per row of `A`, which is costly whenever `B` doesn't fit in cache: the LM head kernel benchmark (154 MB `wte`) takes ≈196 ms at M = 128 on the M2, against ≈13 ms for Accelerate. The engine no longer hits this at M > 1 with a large `B`: the LM head now runs at M = 1, and the only other transposed-B call is the attention `Q·Kᵀ` score MatMul, whose `B` (`K`, at most 1024 × 64 floats per head) fits in cache.
+3. **The work split ignores P/E cores.** Rows are split into equal chunks across all cores and the call waits for every chunk, so a chunk scheduled on a slower efficiency core delays the whole call.
 4. **Activation memory grows quickly with prompt length.** The arena is sized exactly per request (`Engine::stepArenaBytes`), but nothing is freed between layers within a step. A 1023-token prompt needs ≈1.0 GB of arena (≈986 MB), of which ≈61% is attention scores (one `rows × contextLen` block per head per layer); logits are one row and negligible. A decode step needs ≈1.2 MB.
 5. **`TaskQueue` tracks completion with one global counter.** Two concurrent callers would each wait for the other's tasks as well, so the pool assumes a single caller at a time.
 6. **`LayerNormOp` stores `eps` and `SoftmaxOp` stores `axis`, but neither is passed to its kernel.**
