@@ -26,7 +26,7 @@ GPT-2 124M is small enough to iterate on quickly, yet structurally a full decode
 | `engine/models/` | GPT-2 weight structs, attention/MLP blocks, `KVCache`, sampling (greedy, temperature, top-k, top-p) |
 | `engine/engine.cpp`, `engineAPI.cpp` | Hand-written prefill + autoregressive decode loop; C-linkage API |
 | `frontend/`, `scripts/` | Python frontend; weight export, synthetic weight generation and verification |
-| `tests/` | doctest kernel and arena unit tests (including a MatMul sweep over shapes, transposes and strided layouts against a double-precision reference); synthetic and real-weight greedy-decoding E2E regression tests; C API contract test (input validation, buffer bounds) |
+| `tests/` | doctest kernel and arena unit tests (including a MatMul sweep over shapes, transposes and strided layouts against a double-precision reference); synthetic and real-weight greedy-decoding E2E regression tests; golden regression test against HuggingFace outputs (`scripts/record_goldens.py` records them); C API contract test (input validation, buffer bounds) |
 | `bench/` | Benchmark suite: kernels, memory bandwidth, E2E engine vs PyTorch ([details](./bench/README.md)) |
 
 ---
@@ -36,10 +36,10 @@ GPT-2 124M is small enough to iterate on quickly, yet structurally a full decode
 ```bash
 make weights          # download & export HuggingFace GPT-2 weights into bin/ (needs scripts/requirements.txt)
 
-make check            # debug build + C++ unit tests (2,307 assertions) + synthetic E2E + C API contract tests (~7 s)
+make check            # debug build + C++ unit tests (2,340 assertions) + synthetic E2E, C API contract and golden regression tests (~21 s)
 make test             # C++ unit tests only
-make test_synthetic   # synthetic-weight greedy regression + C API contract test (no downloads; what CI runs)
-make test_full        # real GPT-2 greedy decoding regression (needs bin/ weights)
+make test_synthetic   # synthetic-weight greedy, C API contract and golden regression tests (no downloads; what CI runs)
+make test_full        # real GPT-2 greedy and golden regression tests (needs bin/ weights)
 
 make bench            # full benchmark suite (release build, ~3 min, needs bin/ weights)
 make bench_quick      # quick benchmark (~30 s, no PyTorch baseline)

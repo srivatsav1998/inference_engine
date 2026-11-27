@@ -34,10 +34,10 @@ Act as a senior systems reviewer of user-written code: cache-line bouncing / fal
 ## Build & test
 
 ```bash
-make check           # build + unit tests + synthetic E2E (~1.5s) — run before committing
+make check           # build + unit tests + synthetic E2E (~21s) — run before committing
 make test            # C++ doctest unit tests only (tests/unit/)
-make test_synthetic  # fast synthetic greedy-decoding regression (no downloads; what CI runs)
-make test_full       # real GPT-2 124M greedy regression (needs real weights in bin/)
+make test_synthetic  # synthetic greedy, API contract and golden regression (no downloads; what CI runs)
+make test_full       # real GPT-2 124M greedy and golden regression (needs real weights in bin/)
 make weights         # download & export HuggingFace GPT-2 weights
 make bench           # full benchmark suite (release build, ~3 min, needs real weights)
 make bench_quick     # quick benchmark (~30 s, no PyTorch baseline)

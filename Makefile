@@ -73,11 +73,14 @@ test_synthetic: $(TARGET)
 	@$(PYTHON) tests/e2e/test_synthetic_regression.py
 	@echo "Running C API Contract Test..."
 	@$(PYTHON) tests/e2e/test_api_contract.py
+	@echo "Running Golden Regression Test (synthetic weights)..."
+	@$(PYTHON) tests/e2e/test_golden_regression.py
 
 # Full E2E greedy decoding regression test (Requires real HuggingFace weights)
 test_full: $(TARGET)
 	@echo "Running Full Real GPT-2 E2E Greedy Decoding Regression Test..."
 	@$(PYTHON) tests/e2e/test_greedy_decoding.py
+	@$(PYTHON) tests/e2e/test_golden_regression.py --full
 
 # Default E2E points to fast synthetic test
 test_e2e: test_synthetic
