@@ -44,10 +44,13 @@ def build_gpt2_schema():
 
     return schema, current_byte_offset
 
-def generate_synthetic_weights(out_dir, seed=42):
+def generate_synthetic_weights(out_dir, seed=42, varied_affine=False):
     """
     Generates deterministic, non-zero synthetic weights for the GPT-2 124M architecture.
     Runs in < 1 second with ZERO network requests.
+
+    By default biases are 0 and LayerNorm weights 1, which cannot reveal a dropped or mixed-up
+    bias / LayerNorm tensor. varied_affine=True gives each of them distinct random values.
     """
     os.makedirs(out_dir, exist_ok=True)
     schema, total_bytes = build_gpt2_schema()
@@ -64,10 +67,10 @@ def generate_synthetic_weights(out_dir, seed=42):
 
         if "ln" in name and "weight" in name:
             # LayerNorm weights initialized to 1.0
-            buffer[start : start + count] = 1.0
+            buffer[start : start + count] = rng.normal(1.0, 0.2, count) if varied_affine else 1.0
         elif "bias" in name:
             # Biases initialized to 0.0
-            buffer[start : start + count] = 0.0
+            buffer[start : start + count] = rng.normal(0.0, 0.05, count) if varied_affine else 0.0
         else:
             # Linear & embedding projections initialized with small standard normal
             buffer[start : start + count] = rng.normal(0.0, 0.02, count).astype(np.float32)
@@ -88,9 +91,10 @@ def main():
     parser = argparse.ArgumentParser(description="Generate deterministic synthetic GPT-2 weights for fast CI testing.")
     parser.add_argument("--out-dir", type=str, required=True, help="Directory to output synthetic model weights and offsets")
     parser.add_argument("--seed", type=int, default=42, help="RNG seed for deterministic weights")
+    parser.add_argument("--varied-affine", action="store_true", help="Random biases and LayerNorm weights")
     args = parser.parse_args()
 
-    generate_synthetic_weights(args.out_dir, seed=args.seed)
+    generate_synthetic_weights(args.out_dir, seed=args.seed, varied_affine=args.varied_affine)
 
 if __name__ == "__main__":
     main()
